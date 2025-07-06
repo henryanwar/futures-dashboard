@@ -1,30 +1,22 @@
 const fetch = require('node-fetch');
 
 exports.handler = async function (event, context) {
-  const { symbol } = event.queryStringParameters;
-  const FINNHUB_API_KEY = 'd1l5q9pr01qt8foressgd1l5q9pr01qt8forest0'; // <-- PASTE YOUR KEY HERE
+  // We know the underlying is the Russell 2000, so we will use its direct symbol for the quote.
+  const FINNHUB_INDEX_SYMBOL = 'IWM'; // Using IWM ETF as a stable proxy for the Russell 2000 index.
+  const FINNHUB_API_KEY = 'YOUR_FINNHUB_API_KEY'; // Make sure your key is pasted here.
 
-  if (!symbol) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: 'Symbol parameter is required.' }),
-    };
-  }
-
-  // Finnhub expects a different format for futures symbols (e.g., RTYU5 -> RTYU25)
-  // This is a basic conversion that might need adjustment for other contracts.
-  const convertedSymbol = symbol.replace(/([A-Z])(\d)$/, '$1$2' + (new Date().getFullYear() + 1).toString().slice(-1));
-  const url = `https://finnhub.io/api/v1/quote?symbol=${convertedSymbol}&token=${FINNHUB_API_KEY}`;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${FINNHUB_INDEX_SYMBOL}&token=${FINNHUB_API_KEY}`;
 
   try {
     const response = await fetch(url);
     const data = await response.json();
 
+    // Check for a valid response from Finnhub
     if (!response.ok || data.c === 0) {
-      throw new Error(`Finnhub could not find data for symbol: ${convertedSymbol}`);
+      throw new Error(`Finnhub could not find data for proxy symbol: ${FINNHUB_INDEX_SYMBOL}`);
     }
     
-    // 'pc' in Finnhub's response is the previous close price
+    // 'pc' in Finnhub's response is the previous day's close price
     const closePrice = data.pc;
 
     return {
