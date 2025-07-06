@@ -1,9 +1,8 @@
 const fetch = require('node-fetch');
 
 exports.handler = async function (event, context) {
-  // We know the underlying is the Russell 2000, so we will use its direct symbol for the quote.
-  const FINNHUB_INDEX_SYMBOL = 'IWM'; // Using IWM ETF as a stable proxy for the Russell 2000 index.
-  const FINNHUB_API_KEY = 'YOUR_FINNHUB_API_KEY'; // Make sure your key is pasted here.
+  const FINNHUB_INDEX_SYMBOL = 'IWM';
+  const FINNHUB_API_KEY = 'd1l5q9pr01qt8foressgd1l5q9pr01qt8forest0'; // <-- PASTE YOUR KEY HERE
 
   const url = `https://finnhub.io/api/v1/quote?symbol=${FINNHUB_INDEX_SYMBOL}&token=${FINNHUB_API_KEY}`;
 
@@ -11,12 +10,15 @@ exports.handler = async function (event, context) {
     const response = await fetch(url);
     const data = await response.json();
 
-    // Check for a valid response from Finnhub
+    // If the API key is invalid, Finnhub sends an error message in the JSON response
+    if (data.error) {
+      throw new Error(`Finnhub API Error: ${data.error}`);
+    }
+
     if (!response.ok || data.c === 0) {
-      throw new Error(`Finnhub could not find data for proxy symbol: ${FINNHUB_INDEX_SYMBOL}`);
+      throw new Error(`Finnhub could not find data. Raw response: ${JSON.stringify(data)}`);
     }
     
-    // 'pc' in Finnhub's response is the previous day's close price
     const closePrice = data.pc;
 
     return {
