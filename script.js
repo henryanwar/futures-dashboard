@@ -13,9 +13,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const nlvDisplay = document.getElementById('nlv');
     const notionalValueDisplay = document.getElementById('notional-value');
     const leverageDisplay = document.getElementById('leverage');
+    const positionsList = document.getElementById('positions-list');
+    const netPositionDisplay = document.getElementById('net-position');
+    const riskAssessmentDisplay = document.getElementById('risk-assessment');
 
     // --- FUNCTIONS ---
     const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+    
+    // NEW: Risk Analysis Function
+    const getRiskAssessment = (leverage) => {
+        let message = '';
+        let color = '#f0f2f5'; // Default background color
+        let textColor = '#1c1e21'; // Default text color
+
+        if (leverage >= 0.8 && leverage <= 1.2) message = 'Normal Risk (Market Risk)';
+        else if (leverage >= 0 && leverage < 0.8) message = 'Low Risk (Below Market Risk)';
+        else if (leverage > 1.2 && leverage <= 1.5) message = 'Slightly Elevated Risk';
+        else if (leverage > 1.5 && leverage <= 2) message = 'Elevated Risk (Above Market Risk)';
+        else if (leverage > 2 && leverage <= 2.5) message = 'Risk Limits Breached: CHECK IN';
+        else if (leverage > 2.5) {
+            message = 'EXTREME RISK: CUT ALL POSITIONS. EXTREME RISK.';
+            color = '#dc3545'; // Red background
+            textColor = '#fff'; // White text
+        }
+        else if (leverage < 0 && leverage >= -0.5) message = 'Some Risk (Net Short)';
+        else if (leverage < -0.5 && leverage >= -1) message = 'Elevated Risk (Net Short)';
+        else if (leverage < -1 && leverage >= -1.5) message = 'High Risk: CHECK IN (Net Short)';
+        else if (leverage < -1.5) {
+            message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)';
+            color = '#dc3545'; // Red background
+            textColor = '#fff'; // White text
+        }
+        else message = 'N/A';
+        
+        riskAssessmentDisplay.textContent = message;
+        riskAssessmentDisplay.style.backgroundColor = color;
+        riskAssessmentDisplay.style.color = textColor;
+    };
+
     const handleApiError = (message) => {
         alert(`Error: ${message}`);
         loader.classList.add('hidden');
@@ -43,13 +78,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const positionsData = await positionsResponse.json();
             const futuresPositions = positionsData.data.items.filter(p => p['instrument-type'] === 'Future');
 
+            // NEW: Clear previous positions list
+            positionsList.innerHTML = '';
+            let netQuantity = 0;
+
             let totalNotionalValue = 0;
             if (futuresPositions.length > 0) {
+                // NEW: Populate positions list and calculate net quantity
+                futuresPositions.forEach(p => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span>${p.symbol} (${p['underlying-symbol']})</span> <strong>Qty: ${p.quantity}</strong>`;
+                    positionsList.appendChild(li);
+                    netQuantity += parseInt(p.quantity, 10);
+                });
+
                 const liveSymbols = futuresPositions.map(p => p.symbol.replace(/^\//, ''));
                 let priceSourceMessage = " (Live)";
 
                 try {
-                    // ATTEMPT 1: Get LIVE market prices
                     const quotesResponse = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
                         method: 'POST',
                         headers: { 'Authorization': sessionToken, 'Content-Type': 'application/json' },
@@ -62,42 +108,46 @@ document.addEventListener('DOMContentLoaded', () => {
                         const cleanSymbol = position.symbol.replace(/^\//, '');
                         const quote = quotesData.data.items.find(q => q.symbol === cleanSymbol);
                         if (quote && quote['last-trade-price']) {
-                            totalNotionalValue += parseFloat(quote['last-trade-price']) * parseInt(position.multiplier, 10) * Math.abs(parseInt(position.quantity, 10));
+                            totalNotionalValue += parseFloat(quote['last-trade-price']) * parseInt(position.multiplier, 10) * position.quantity;
                         }
                     });
                     notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
                 } catch (liveError) {
-                    priceSourceMessage = " (Finnhub Close)";
+                    priceSourceMessage = " (IWM Proxy)";
                     try {
-                        // ATTEMPT 2 (FALLBACK): Use our Netlify Function to get price from Finnhub
-                        const cleanSymbol = futuresPositions[0].symbol.replace(/^\//, '');
-                        const proxyUrl = `/.netlify/functions/get-price?symbol=${cleanSymbol}`;
+                        const proxyUrl = `/.netlify/functions/get-price`;
                         const proxyResponse = await fetch(proxyUrl);
                         const priceData = await proxyResponse.json();
-                        
-                        if (!proxyResponse.ok || priceData.error) {
-                            throw new Error(priceData.error || 'Proxy request failed.');
-                        }
+                        if (!proxyResponse.ok || priceData.error) throw new Error(priceData.error || 'Proxy request failed.');
                         
                         if (priceData.close) {
-                            const price = parseFloat(priceData.close);
+                            const iwmPrice = parseFloat(priceData.close);
+                            const indexPrice = iwmPrice * 10;
                             futuresPositions.forEach(position => {
-                                totalNotionalValue += price * parseInt(position.multiplier, 10) * Math.abs(parseInt(position.quantity, 10));
+                                totalNotionalValue += indexPrice * parseInt(position.multiplier, 10) * position.quantity;
                             });
                         }
                         notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
                     } catch (fallbackError) {
                         handleApiError(`Fallback failed: ${fallbackError.message}`);
                         notionalValueDisplay.textContent = "Price Unavailable";
-                        totalNotionalValue = 0;
                     }
                 }
             } else {
                  notionalValueDisplay.textContent = formatCurrency(0);
+                 netQuantity = 0;
             }
+
+            // NEW: Display Net Position
+            if (netQuantity > 0) netPositionDisplay.textContent = 'Net Long';
+            else if (netQuantity < 0) netPositionDisplay.textContent = 'Net Short';
+            else netPositionDisplay.textContent = 'Flat';
 
             const leverage = netLiqValue > 0 ? totalNotionalValue / netLiqValue : 0;
             leverageDisplay.textContent = `${leverage.toFixed(2)}x`;
+
+            // NEW: Call Risk Analysis Function
+            getRiskAssessment(leverage);
 
             loader.classList.add('hidden');
             resultsSection.classList.remove('hidden');
