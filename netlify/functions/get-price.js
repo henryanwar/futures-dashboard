@@ -1,23 +1,27 @@
 const fetch = require('node-fetch');
 
 exports.handler = async function (event, context) {
-  // Using the correct symbol for the Russell 2000 Index as a stable proxy.
-  const FINNHUB_INDEX_SYMBOL = '^RUT'; 
-  const FINNHUB_API_KEY = 'YOUR_FINNHUB_API_KEY'; // Make sure your key is pasted here.
+  const PROXY_SYMBOL = 'IWM'; // Using IWM ETF as a stable proxy
+  const ALPHA_VANTAGE_API_KEY = 'YOUR_ALPHA_VANTAGE_API_KEY'; // <-- PASTE YOUR KEY HERE
 
-  const url = `https://finnhub.io/api/v1/quote?symbol=${FINNHUB_INDEX_SYMBOL}&token=${FINNHUB_API_KEY}`;
+  const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${PROXY_SYMBOL}&apikey=${ALPHA_VANTAGE_API_KEY}`;
 
   try {
     const response = await fetch(url);
     const data = await response.json();
 
-    // Check for a valid response from Finnhub
-    if (!response.ok || data.c === 0) {
-      throw new Error(`Finnhub could not find data for proxy symbol: ${FINNHUB_INDEX_SYMBOL}`);
+    // Check for a valid response from Alpha Vantage
+    const quote = data['Global Quote'];
+    if (!quote || Object.keys(quote).length === 0) {
+      throw new Error(`Alpha Vantage did not return data. The API limit may be reached.`);
     }
     
-    // 'pc' in Finnhub's response is the previous day's close price
-    const closePrice = data.pc;
+    // In Alpha Vantage's response, the key is "08. previous close"
+    const closePrice = parseFloat(quote['08. previous close']);
+
+    if (!closePrice) {
+        throw new Error('Could not parse closing price from Alpha Vantage response.');
+    }
 
     return {
       statusCode: 200,
