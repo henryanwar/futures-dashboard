@@ -25,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Main function to fetch and process data
     const getDashboardData = async (sessionToken) => {
         try {
-            // 1. Get user accounts
             const accountsResponse = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { 'Authorization': sessionToken } });
             if (!accountsResponse.ok) throw new Error('Could not fetch accounts.');
             const accountsData = await accountsResponse.json();
@@ -33,27 +32,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!primaryAccount) throw new Error('No accounts found for this user.');
             const accountNumber = primaryAccount.account['account-number'];
 
-            // 2. Get account balances
             const balanceResponse = await fetch(`${TASTYTRADE_API_URL}/accounts/${accountNumber}/balances`, { headers: { 'Authorization': sessionToken } });
             if (!balanceResponse.ok) throw new Error('Could not fetch account balance.');
             const balanceData = await balanceResponse.json();
             const netLiqValue = parseFloat(balanceData.data['net-liquidating-value']);
             nlvDisplay.textContent = formatCurrency(netLiqValue);
             
-            // 3. Get account positions
             const positionsResponse = await fetch(`${TASTYTRADE_API_URL}/accounts/${accountNumber}/positions`, { headers: { 'Authorization': sessionToken } });
             if (!positionsResponse.ok) throw new Error('Could not fetch positions.');
             const positionsData = await positionsResponse.json();
             const futuresPositions = positionsData.data.items.filter(p => p['instrument-type'] === 'Future');
 
-            // 4. Calculate total notional value
             let totalNotionalValue = 0;
             if (futuresPositions.length > 0) {
                 const liveSymbols = futuresPositions.map(p => p.symbol.replace(/^\//, ''));
                 let priceSourceMessage = " (Live)";
 
                 try {
-                    // ATTEMPT 1: Get LIVE prices for the futures contract from Tastytrade
+                    // ATTEMPT 1: Get LIVE market prices
                     const quotesResponse = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
                         method: 'POST',
                         headers: { 'Authorization': sessionToken, 'Content-Type': 'application/json' },
@@ -70,33 +66,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                     notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
-
                 } catch (liveError) {
-                    priceSourceMessage = " (IWM Proxy)";
+                    priceSourceMessage = " (Finnhub Close)";
                     try {
-                        // ATTEMPT 2 (FALLBACK): Get IWM ETF closing price from Tastytrade
-                        const proxySymbol = 'IWM';
-                        const quotesResponse = await fetch(`${TASTYTRADE_API_URL}/instruments/quotes`, {
-                            method: 'POST',
-                            headers: { 'Authorization': sessionToken, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ symbols: [proxySymbol] })
-                        });
-                        if (!quotesResponse.ok) throw new Error(`Could not fetch IWM quote from Tastytrade.`);
+                        // ATTEMPT 2 (FALLBACK): Use our Netlify Function to get price from Finnhub
+                        const cleanSymbol = futuresPositions[0].symbol.replace(/^\//, '');
+                        const proxyUrl = `/.netlify/functions/get-price?symbol=${cleanSymbol}`;
+                        const proxyResponse = await fetch(proxyUrl);
+                        const priceData = await proxyResponse.json();
                         
-                        const quotesData = await quotesResponse.json();
-                        const quote = quotesData.data.items[0];
-
-                        if (!quote || !quote.close) throw new Error('Could not parse IWM close price from API response.');
+                        if (!proxyResponse.ok || priceData.error) {
+                            throw new Error(priceData.error || 'Proxy request failed.');
+                        }
                         
-                        const price = parseFloat(quote.close);
-                        
-                        // Apply the IWM closing price to the futures position
-                        futuresPositions.forEach(position => {
-                            totalNotionalValue += price * parseInt(position.multiplier, 10) * Math.abs(parseInt(position.quantity, 10));
-                        });
-                        
+                        if (priceData.close) {
+                            const price = parseFloat(priceData.close);
+                            futuresPositions.forEach(position => {
+                                totalNotionalValue += price * parseInt(position.multiplier, 10) * Math.abs(parseInt(position.quantity, 10));
+                            });
+                        }
                         notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
-
                     } catch (fallbackError) {
                         handleApiError(`Fallback failed: ${fallbackError.message}`);
                         notionalValueDisplay.textContent = "Price Unavailable";
@@ -112,7 +101,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             loader.classList.add('hidden');
             resultsSection.classList.remove('hidden');
-
         } catch (error) {
             handleApiError(error.message);
         }
