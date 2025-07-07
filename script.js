@@ -75,22 +75,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // Build symbols string (comma-separated, with leading slash)
+                // Build symbol list (ensure leading slash)
                 const symbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
-                const symbolQuery = symbols.join(',');
-                console.debug('Requesting market-metrics GET for:', symbolQuery);
+                
+                // --- THIS IS THE CHANGE ---
+                console.log('Requesting market-metrics GET for:', symbols);
 
-                // 4) Fetch live quotes via GET with comma-separated symbols
-                const metricsUrl = `${TASTYTRADE_API_URL}/market-metrics?symbols=${encodeURIComponent(symbolQuery)}`;
-                const quoteRes = await fetch(metricsUrl, { headers: { Authorization: sessionToken, 'Accept': 'application/json' } });
+                // Build query params
+                const params = new URLSearchParams();
+                symbols.forEach(sym => params.append('symbols', sym));
+                const url = `${TASTYTRADE_API_URL}/market-metrics?${params.toString()}`;
+
+                // 4) Fetch live quotes via GET
+                const quoteRes = await fetch(url, { headers: { Authorization: sessionToken } });
                 if (!quoteRes.ok) {
                     const errText = await quoteRes.text();
                     throw new Error(`Market-metrics GET failed ${quoteRes.status}: ${errText}`);
                 }
                 const quoteData = await quoteRes.json();
-                console.debug('Market-metrics GET response:', quoteData);
+                
+                // --- THIS IS THE CHANGE ---
+                console.log('Market-metrics GET response:', quoteData);
 
-                // 5) Compute total notional using contract-value or multiplier
+                // 5) Compute total notional
+                // Use a lookup map for contract sizing
                 const lookup = futures.reduce((m, p) => {
                     const key = p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`;
                     m[key] = p;
@@ -98,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, {});
                 quoteData.data.items.forEach(q => {
                     const pos = lookup[q.symbol];
-                    console.debug('Matching quote', q.symbol, '->', pos && pos.symbol);
+                    console.log('Matching GET quote', q.symbol, '->', pos && pos.symbol);
                     if (pos && q['last-trade-price'] != null) {
                         const size = parseFloat(pos['contract-value'] ?? pos.multiplier ?? 1);
                         const qty = parseInt(pos.quantity, 10);
@@ -127,10 +135,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- AUTH HANDLERS ---
     const performLogin = async payload => {
-        loader.classList.remove('hidden'); loginSection.classList.add('hidden'); resultsSection.classList.add('hidden');
+        loader.classList.remove('hidden');
+        loginSection.classList.add('hidden');
+        resultsSection.classList.add('hidden');
         try {
             const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
             const data = await res.json();
@@ -152,7 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('tastytradeRememberToken');
-        resultsSection.classList.add('hidden'); loginSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+        loginSection.classList.remove('hidden');
         document.getElementById('username').value = '';
         document.getElementById('password').value = '';
     });
