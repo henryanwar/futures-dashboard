@@ -46,19 +46,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- FETCH DASHBOARD DATA ---
     const getDashboardData = async sessionToken => {
         try {
-            // Fetch accounts, balances, positions
+            // Fetch accounts
             const accRes = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { Authorization: sessionToken } });
             if (!accRes.ok) throw new Error('Accounts fetch failed');
             const accData = await accRes.json();
             const acct = accData.data.items[0]?.account['account-number'];
             if (!acct) throw new Error('No account found');
 
+            // Fetch balances
             const balRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${acct}/balances`, { headers: { Authorization: sessionToken } });
             if (!balRes.ok) throw new Error('Balance fetch failed');
             const balData = await balRes.json();
             const netLiq = parseFloat(balData.data['net-liquidating-value']);
             nlvDisplay.textContent = formatCurrency(netLiq);
 
+            // Fetch positions
             const posRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${acct}/positions`, { headers: { Authorization: sessionToken } });
             if (!posRes.ok) throw new Error('Positions fetch failed');
             const posData = await posRes.json();
@@ -68,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let netQty = 0, totalNotional = 0;
 
             if (futures.length) {
+                // List positions
                 futures.forEach(p => {
                     const li = document.createElement('li');
                     li.innerHTML = `<span>${p.symbol} (${p['underlying-symbol']})</span> <strong>Qty: ${p.quantity}</strong>`;
@@ -75,41 +78,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // --- FIX: ensure leading slash in symbols ---
+                // Prepare symbols (include leading slash)
                 const liveSymbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
-                let sourceNote = ' (Live)';
+                const params = new URLSearchParams();
+                liveSymbols.forEach(sym => params.append('symbols', sym));
+                const metricsUrl = `${TASTYTRADE_API_URL}/market-metrics?${params.toString()}`;
 
                 try {
-                    const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
-                        method: 'POST',
-                        headers: {
-                            Authorization: sessionToken,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ symbols: liveSymbols })
-                    });
-                    if (!quoteRes.ok) throw new Error(`Market-metrics ${quoteRes.status}`);
+                    // Fetch market metrics via GET with query params
+                    const quoteRes = await fetch(metricsUrl, { headers: { Authorization: sessionToken } });
+                    if (!quoteRes.ok) throw new Error(`Market-metrics fetch failed: ${quoteRes.status}`);
                     const quoteData = await quoteRes.json();
 
+                    // Compute notional
                     quoteData.data.items.forEach(q => {
-                        const pos = futures.find(f => (f.symbol.startsWith('/') ? f.symbol : `/${f.symbol}`) === q.symbol);
+                        const pos = futures.find(f => {
+                            const sym = f.symbol.startsWith('/') ? f.symbol : `/${f.symbol}`;
+                            return sym === q.symbol;
+                        });
                         if (pos && q['last-trade-price']) {
                             totalNotional += parseFloat(q['last-trade-price'])
-                                              * parseInt(pos.multiplier, 10)
-                                              * parseInt(pos.quantity, 10);
+                                * parseInt(pos.multiplier, 10)
+                                * parseInt(pos.quantity, 10);
                         }
                     });
-
-                    notionalValueDisplay.textContent = formatCurrency(totalNotional) + sourceNote;
+                    notionalValueDisplay.textContent = formatCurrency(totalNotional) + ' (Live)';
                 } catch (liveErr) {
-                    console.error('Live fetch error:', liveErr);
+                    console.error('Market metrics GET error:', liveErr);
                     notionalValueDisplay.textContent = 'Price Unavailable';
                 }
             } else {
                 notionalValueDisplay.textContent = formatCurrency(0);
             }
 
-            // Net position text
+            // Net position
             netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
 
             // Leverage & risk
