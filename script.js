@@ -75,26 +75,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // Build symbol list (ensure leading slash)
+                // Build symbols array (with leading slash)
                 const symbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
-                console.debug('Requesting market-metrics GET for:', symbols);
+                console.debug('Requesting market-metrics POST for:', symbols);
 
-                // Build query params
-                const params = new URLSearchParams();
-                symbols.forEach(sym => params.append('symbols', sym));
-                const url = `${TASTYTRADE_API_URL}/market-metrics?${params.toString()}`;
-
-                // 4) Fetch live quotes via GET
-                const quoteRes = await fetch(url, { headers: { Authorization: sessionToken } });
+                // 4) Fetch live quotes via POST
+                const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: sessionToken,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ symbols })
+                });
                 if (!quoteRes.ok) {
                     const errText = await quoteRes.text();
-                    throw new Error(`Market-metrics GET failed ${quoteRes.status}: ${errText}`);
+                    throw new Error(`Market-metrics POST failed ${quoteRes.status}: ${errText}`);
                 }
                 const quoteData = await quoteRes.json();
-                console.debug('Market-metrics GET response:', quoteData);
+                console.debug('Market-metrics POST response:', quoteData);
 
-                // 5) Compute total notional
-                // Use a lookup map for contract sizing
+                // 5) Compute total notional using contract-value or multiplier
                 const lookup = futures.reduce((m, p) => {
                     const key = p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`;
                     m[key] = p;
@@ -102,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, {});
                 quoteData.data.items.forEach(q => {
                     const pos = lookup[q.symbol];
-                    console.debug('Matching GET quote', q.symbol, '->', pos && pos.symbol);
+                    console.debug('Matching quote', q.symbol, '->', pos && pos.symbol);
                     if (pos && q['last-trade-price'] != null) {
                         const size = parseFloat(pos['contract-value'] ?? pos.multiplier ?? 1);
                         const qty = parseInt(pos.quantity, 10);
