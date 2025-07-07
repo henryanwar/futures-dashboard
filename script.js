@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const symbols = futures.map(p => p.symbol);
                 
                 const params = new URLSearchParams();
-                symbols.forEach(sym => params.append('symbols[]', sym)); // Use symbols[] for array parameter
+                symbols.forEach(sym => params.append('symbols[]', sym));
                 const url = `${TASTYTRADE_API_URL}/market-metrics?${params.toString()}`;
 
                 // 4) Fetch live quotes via GET
@@ -87,7 +87,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const quoteData = await quoteRes.json();
 
                 // 5) Compute total notional
-                const quoteLookup = quoteData.data.items.reduce((m, q) => {
+                // --- THIS IS THE CORRECTED LINE ---
+                const quoteLookup = (quoteData.data.items || []).reduce((m, q) => {
                     m[q['underlying-symbol']] = q;
                     return m;
                 }, {});
