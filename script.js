@@ -75,25 +75,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // --- THIS IS THE FINAL FIX ---
-                // The API expects a comma-separated string for symbols in a GET request.
-                const symbols = futures.map(p => p.symbol);
-                const encodedSymbols = symbols.map(s => encodeURIComponent(s)).join(',');
-                const url = `${TASTYTRADE_API_URL}/market-metrics?symbols=${encodedSymbols}`;
-                
-                // 4) Fetch live quotes via GET
-                const quoteRes = await fetch(url, { headers: { Authorization: sessionToken } });
-                if (!quoteRes.ok) throw new Error('Market-metrics GET failed');
+                // --- THIS IS THE FINAL FIX, BASED ON THE OFFICIAL LIBRARY ---
+                // The API requires a POST request with the symbols in the body.
+                const symbols = futures.map(p => p.symbol); // Using the original symbol with the slash
+                const url = `${TASTYTRADE_API_URL}/market-metrics`;
+
+                // 4) Fetch live quotes via POST
+                const quoteRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Authorization': sessionToken, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbols })
+                });
+
+                if (!quoteRes.ok) throw new Error('Market-metrics POST failed');
                 const quoteData = await quoteRes.json();
                 
                 // 5) Compute total notional
                 const quoteLookup = (quoteData.data.items || []).reduce((m, q) => {
-                    m[q.symbol] = q; // Use the full symbol as the key
+                    m[q.symbol] = q; 
                     return m;
                 }, {});
 
                 futures.forEach(pos => {
-                    const quote = quoteLookup[pos.symbol]; // Match on the full symbol
+                    const quote = quoteLookup[pos.symbol];
                     if (quote && quote['last-trade-price'] != null) {
                         const price = parseFloat(quote['last-trade-price']);
                         const multiplier = parseFloat(pos.multiplier);
@@ -101,3 +105,64 @@ document.addEventListener('DOMContentLoaded', () => {
                         totalNotional += price * multiplier * quantity;
                     }
                 });
+                notionalValueDisplay.textContent = formatCurrency(totalNotional) + ' (Live)';
+            } else {
+                notionalValueDisplay.textContent = formatCurrency(0);
+            }
+
+            // Net position status
+            netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
+
+            // Leverage & risk
+            const leverage = netLiq ? totalNotional / netLiq : 0;
+            leverageDisplay.textContent = `${leverage.toFixed(2)}x`;
+            getRiskAssessment(leverage);
+
+            loader.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+        } catch (err) {
+            handleError(err.message);
+        }
+    };
+
+    // --- AUTH HANDLERS ---
+    const performLogin = async payload => {
+        loader.classList.remove('hidden');
+        loginSection.classList.add('hidden');
+        resultsSection.classList.add('hidden');
+        try {
+            const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
+            const data = await res.json();
+            const token = data.data['session-token'];
+            if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
+            await getDashboardData(token);
+        } catch (e) {
+            handleError(e.message);
+        }
+    };
+
+    // Login / logout events
+    loginBtn.addEventListener('click', () => {
+        const user = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+        if (!user || !pass) return alert('Enter both username and password.');
+        performLogin({ login: user, password: pass, 'remember-me': true });
+    });
+
+    logoutBtn.addEventListener('click', () => {
+        localStorage.removeItem('tastytradeRememberToken');
+        resultsSection.classList.add('hidden');
+        loginSection.classList.remove('hidden');
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+    });
+
+    // Auto-login if token saved
+    const saved = localStorage.getItem('tastytradeRememberToken');
+    if (saved) performLogin({ 'remember-token': saved });
+});
