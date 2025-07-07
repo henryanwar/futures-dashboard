@@ -50,19 +50,19 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1) Fetch account number
             const accRes = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { Authorization: sessionToken } });
             if (!accRes.ok) throw new Error('Accounts fetch failed');
-            const accNum = await accRes.json().then(d => d.data.items[0]?.account['account-number']);
+            const accNum = (await accRes.json()).data.items[0]?.account['account-number'];
             if (!accNum) throw new Error('No account found');
 
             // 2) Fetch balances
             const balRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/balances`, { headers: { Authorization: sessionToken } });
             if (!balRes.ok) throw new Error('Balance fetch failed');
-            const netLiq = await balRes.json().then(d => parseFloat(d.data['net-liquidating-value']));
+            const netLiq = parseFloat((await balRes.json()).data['net-liquidating-value']);
             nlvDisplay.textContent = formatCurrency(netLiq);
 
             // 3) Fetch positions
             const posRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/positions`, { headers: { Authorization: sessionToken } });
             if (!posRes.ok) throw new Error('Positions fetch failed');
-            const futures = await posRes.json().then(d => d.data.items.filter(p => p['instrument-type'] === 'Future'));
+            const futures = (await posRes.json()).data.items.filter(p => p['instrument-type'] === 'Future');
 
             positionsList.innerHTML = '';
             let netQty = 0, totalNotional = 0;
@@ -75,22 +75,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // Build a lookup for symbol matching (with and without slash)
+                // Build symbol map for matching both forms
                 const symbolMap = futures.reduce((map, p) => {
                     const raw = p.symbol;
                     const withSlash = raw.startsWith('/') ? raw : `/${raw}`;
-                    const withoutSlash = raw.replace('/', '');
+                    const withoutSlash = raw.replace(/\//g, '');
                     map[withSlash] = p;
                     map[withoutSlash] = p;
                     return map;
                 }, {});
-
                 const symbols = Object.keys(symbolMap);
                 console.debug('Requesting market-metrics for:', symbols);
 
-                // Call market-metrics via POST
+                // 4) Fetch live quotes
                 const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
-                    method: 'POST', headers: { Authorization: sessionToken, 'Content-Type': 'application/json' },
+                    method: 'POST',
+                    headers: { Authorization: sessionToken, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ symbols })
                 });
                 if (!quoteRes.ok) {
@@ -100,14 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const quoteData = await quoteRes.json();
                 console.debug('Market-metrics response:', quoteData);
 
-                // Compute notional: price * contract size * qty
+                // 5) Compute total notional
                 quoteData.data.items.forEach(q => {
-                    // match symbol
-                    const matchKey = q.symbol.startsWith('/') ? q.symbol : `/${q.symbol}`;
-                    const pos = symbolMap[q.symbol] || symbolMap[matchKey];
+                    const key = q.symbol.startsWith('/') ? q.symbol : `/${q.symbol}`;
+                    const pos = symbolMap[q.symbol] || symbolMap[key];
                     console.debug('Matching quote', q.symbol, '-> position', pos && pos.symbol);
                     if (pos && q['last-trade-price'] != null) {
-                        // determine contract size: use API field or fallback
                         const contractSize = parseFloat(pos['contract-value'] ?? pos.multiplier ?? 1);
                         const qty = parseInt(pos.quantity, 10);
                         totalNotional += q['last-trade-price'] * contractSize * qty;
@@ -118,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 notionalValueDisplay.textContent = formatCurrency(0);
             }
 
-            // Display net position
+            // Net position
             netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
 
             // Leverage & risk
@@ -135,20 +133,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- AUTH HANDLERS ---
     const performLogin = async payload => {
-        loader.classList.remove('hidden'); loginSection.classList.add('hidden'); resultsSection.classList.add('hidden');
+        loader.classList.remove('hidden');
+        loginSection.classList.add('hidden');
+        resultsSection.classList.add('hidden');
         try {
             const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
-            const token = (await res.json()).data['session-token'];
-            if (payload.password) localStorage.setItem('tastytradeRememberToken', (await res.json()).data['remember-token']);
+            const data = await res.json();  // read once
+            const token = data.data['session-token'];
+            if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
             await getDashboardData(token);
         } catch (e) {
             handleError(e.message);
         }
     };
 
+    // Login / logout events
     loginBtn.addEventListener('click', () => {
         const user = document.getElementById('username').value;
         const pass = document.getElementById('password').value;
@@ -158,12 +162,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('tastytradeRememberToken');
-        resultsSection.classList.add('hidden'); loginSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+        loginSection.classList.remove('hidden');
         document.getElementById('username').value = '';
         document.getElementById('password').value = '';
     });
 
-    // auto-login
-    const saved = localStorage.getItem('tastytradeRememberToken');
-    if (saved) performLogin({ 'remember-token': saved });
+    // Auto-login if token saved
+    const savedToken = localStorage.getItem('tastytradeRememberToken');
+    if (savedToken) performLogin({ 'remember-token': savedToken });
 });
