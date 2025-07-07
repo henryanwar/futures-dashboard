@@ -17,158 +17,150 @@ document.addEventListener('DOMContentLoaded', () => {
     const netPositionDisplay = document.getElementById('net-position');
     const riskAssessmentDisplay = document.getElementById('risk-assessment');
 
-    // --- FUNCTIONS ---
-    const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-    
-    const getRiskAssessment = (leverage) => {
-        let message = '';
-        let color = '#f0f2f5';
-        let textColor = '#1c1e21';
-
+    // --- HELPERS ---
+    const formatCurrency = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+    const getRiskAssessment = leverage => {
+        let message = '', bg = '#f0f2f5', color = '#1c1e21';
         if (leverage >= 0.8 && leverage <= 1.2) message = 'Normal Risk (Market Risk)';
         else if (leverage >= 0 && leverage < 0.8) message = 'Low Risk (Below Market Risk)';
         else if (leverage > 1.2 && leverage <= 1.5) message = 'Slightly Elevated Risk';
         else if (leverage > 1.5 && leverage <= 2) message = 'Elevated Risk (Above Market Risk)';
         else if (leverage > 2 && leverage <= 2.5) message = 'Risk Limits Breached: CHECK IN';
-        else if (leverage > 2.5) {
-            message = 'EXTREME RISK: CUT ALL POSITIONS. EXTREME RISK.';
-            color = '#dc3545'; textColor = '#fff';
-        }
+        else if (leverage > 2.5) { message = 'EXTREME RISK: CUT ALL POSITIONS.'; bg = '#dc3545'; color = '#fff'; }
         else if (leverage < 0 && leverage >= -0.5) message = 'Some Risk (Net Short)';
         else if (leverage < -0.5 && leverage >= -1) message = 'Elevated Risk (Net Short)';
         else if (leverage < -1 && leverage >= -1.5) message = 'High Risk: CHECK IN (Net Short)';
-        else if (leverage < -1.5) {
-            message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)';
-            color = '#dc3545'; textColor = '#fff';
-        }
+        else if (leverage < -1.5) { message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)'; bg = '#dc3545'; color = '#fff'; }
         else message = 'N/A';
-        
         riskAssessmentDisplay.textContent = message;
-        riskAssessmentDisplay.style.backgroundColor = color;
-        riskAssessmentDisplay.style.color = textColor;
+        riskAssessmentDisplay.style.background = bg;
+        riskAssessmentDisplay.style.color = color;
     };
 
-    const handleApiError = (message) => {
-        alert(`Error: ${message}`);
+    const handleError = msg => {
+        alert(`Error: ${msg}`);
         loader.classList.add('hidden');
         loginSection.classList.remove('hidden');
     };
-    
-    const getDashboardData = async (sessionToken) => {
-        try {
-            const accountsResponse = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { 'Authorization': sessionToken } });
-            if (!accountsResponse.ok) throw new Error('Could not fetch accounts.');
-            const accountsData = await accountsResponse.json();
-            const primaryAccount = accountsData.data.items[0]; 
-            if (!primaryAccount) throw new Error('No accounts found for this user.');
-            const accountNumber = primaryAccount.account['account-number'];
 
-            const balanceResponse = await fetch(`${TASTYTRADE_API_URL}/accounts/${accountNumber}/balances`, { headers: { 'Authorization': sessionToken } });
-            if (!balanceResponse.ok) throw new Error('Could not fetch account balance.');
-            const balanceData = await balanceResponse.json();
-            const netLiqValue = parseFloat(balanceData.data['net-liquidating-value']);
-            nlvDisplay.textContent = formatCurrency(netLiqValue);
-            
-            const positionsResponse = await fetch(`${TASTYTRADE_API_URL}/accounts/${accountNumber}/positions`, { headers: { 'Authorization': sessionToken } });
-            if (!positionsResponse.ok) throw new Error('Could not fetch positions.');
-            const positionsData = await positionsResponse.json();
-            const futuresPositions = positionsData.data.items.filter(p => p['instrument-type'] === 'Future');
+    // --- FETCH DASHBOARD DATA ---
+    const getDashboardData = async sessionToken => {
+        try {
+            // Fetch accounts, balances, positions
+            const accRes = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { Authorization: sessionToken } });
+            if (!accRes.ok) throw new Error('Accounts fetch failed');
+            const accData = await accRes.json();
+            const acct = accData.data.items[0]?.account['account-number'];
+            if (!acct) throw new Error('No account found');
+
+            const balRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${acct}/balances`, { headers: { Authorization: sessionToken } });
+            if (!balRes.ok) throw new Error('Balance fetch failed');
+            const balData = await balRes.json();
+            const netLiq = parseFloat(balData.data['net-liquidating-value']);
+            nlvDisplay.textContent = formatCurrency(netLiq);
+
+            const posRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${acct}/positions`, { headers: { Authorization: sessionToken } });
+            if (!posRes.ok) throw new Error('Positions fetch failed');
+            const posData = await posRes.json();
+            const futures = posData.data.items.filter(p => p['instrument-type'] === 'Future');
 
             positionsList.innerHTML = '';
-            let netQuantity = 0;
-            let totalNotionalValue = 0;
+            let netQty = 0, totalNotional = 0;
 
-            if (futuresPositions.length > 0) {
-                futuresPositions.forEach(p => {
+            if (futures.length) {
+                futures.forEach(p => {
                     const li = document.createElement('li');
                     li.innerHTML = `<span>${p.symbol} (${p['underlying-symbol']})</span> <strong>Qty: ${p.quantity}</strong>`;
                     positionsList.appendChild(li);
-                    netQuantity += parseInt(p.quantity, 10);
+                    netQty += parseInt(p.quantity, 10);
                 });
-                
-                // --- THIS IS THE FIX ---
-                // The /market-metrics endpoint requires the original symbol with the leading slash.
-                const liveSymbols = futuresPositions.map(p => p.symbol);
-                let priceSourceMessage = " (Live)";
+
+                // --- FIX: ensure leading slash in symbols ---
+                const liveSymbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
+                let sourceNote = ' (Live)';
 
                 try {
-                    const quotesResponse = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
+                    const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
                         method: 'POST',
-                        headers: { 'Authorization': sessionToken, 'Content-Type': 'application/json' },
+                        headers: {
+                            Authorization: sessionToken,
+                            'Content-Type': 'application/json'
+                        },
                         body: JSON.stringify({ symbols: liveSymbols })
                     });
-                    if (!quotesResponse.ok) throw new Error('Live metrics failed.');
-                    
-                    const quotesData = await quotesResponse.json();
-                    futuresPositions.forEach(position => {
-                        const quote = quotesData.data.items.find(q => q.symbol === position.symbol);
-                        if (quote && quote['last-trade-price']) {
-                            totalNotionalValue += parseFloat(quote['last-trade-price']) * parseInt(position.multiplier, 10) * position.quantity;
+                    if (!quoteRes.ok) throw new Error(`Market-metrics ${quoteRes.status}`);
+                    const quoteData = await quoteRes.json();
+
+                    quoteData.data.items.forEach(q => {
+                        const pos = futures.find(f => (f.symbol.startsWith('/') ? f.symbol : `/${f.symbol}`) === q.symbol);
+                        if (pos && q['last-trade-price']) {
+                            totalNotional += parseFloat(q['last-trade-price'])
+                                              * parseInt(pos.multiplier, 10)
+                                              * parseInt(pos.quantity, 10);
                         }
                     });
-                    notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
-                } catch (liveError) {
-                    priceSourceMessage = " (IWM Proxy)";
-                    try {
-                        const proxyUrl = `/.netlify/functions/get-price`;
-                        const proxyResponse = await fetch(proxyUrl);
-                        const priceData = await proxyResponse.json();
-                        if (!proxyResponse.ok || priceData.error) throw new Error(priceData.error || 'Proxy request failed.');
-                        
-                        if (priceData.close) {
-                            const iwmPrice = parseFloat(priceData.close);
-                            const indexPrice = iwmPrice * 10;
-                            futuresPositions.forEach(position => {
-                                totalNotionalValue += indexPrice * parseInt(position.multiplier, 10) * position.quantity;
-                            });
-                        }
-                        notionalValueDisplay.textContent = formatCurrency(totalNotionalValue) + priceSourceMessage;
-                    } catch (fallbackError) {
-                        handleApiError(`Fallback failed: ${fallbackError.message}`);
-                        notionalValueDisplay.textContent = "Price Unavailable";
-                    }
+
+                    notionalValueDisplay.textContent = formatCurrency(totalNotional) + sourceNote;
+                } catch (liveErr) {
+                    console.error('Live fetch error:', liveErr);
+                    notionalValueDisplay.textContent = 'Price Unavailable';
                 }
             } else {
-                 notionalValueDisplay.textContent = formatCurrency(0);
+                notionalValueDisplay.textContent = formatCurrency(0);
             }
 
-            if (netQuantity > 0) netPositionDisplay.textContent = 'Net Long';
-            else if (netQuantity < 0) netPositionDisplay.textContent = 'Net Short';
-            else netPositionDisplay.textContent = 'Flat';
+            // Net position text
+            netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
 
-            const leverage = netLiqValue > 0 ? totalNotionalValue / netLiqValue : 0;
-            leverageDisplay.textContent = `${leverage.toFixed(2)}x`;
-            getRiskAssessment(leverage);
+            // Leverage & risk
+            const lev = netLiq ? totalNotional / netLiq : 0;
+            leverageDisplay.textContent = `${lev.toFixed(2)}x`;
+            getRiskAssessment(lev);
 
             loader.classList.add('hidden');
             resultsSection.classList.remove('hidden');
-        } catch (error) {
-            handleApiError(error.message);
+        } catch (err) {
+            handleError(err.message);
         }
     };
 
-    const performLogin = async (loginPayload) => {
+    // --- LOGIN / LOGOUT HANDLERS ---
+    const performLogin = async payload => {
         loader.classList.remove('hidden');
         loginSection.classList.add('hidden');
         resultsSection.classList.add('hidden');
         try {
-            const response = await fetch(`${TASTYTRADE_API_URL}/sessions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(loginPayload) });
-            if (!response.ok) { if(response.status === 401) throw new Error('Invalid username or password.'); throw new Error('Login failed.'); }
-            const data = await response.json();
-            const sessionToken = data.data['session-token'];
-            if (loginPayload.password) { localStorage.setItem('tastytradeRememberToken', data.data['remember-token']); }
-            await getDashboardData(sessionToken);
-        } catch (error) { handleApiError(error.message); }
+            const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
+            const data = await res.json();
+            const token = data.data['session-token'];
+            if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
+            await getDashboardData(token);
+        } catch (e) {
+            handleError(e.message);
+        }
     };
+
     loginBtn.addEventListener('click', () => {
-        const username = document.getElementById('username').value; const password = document.getElementById('password').value;
-        if (!username || !password) { alert('Please enter both username and password.'); return; }
-        performLogin({ login: username, password: password, 'remember-me': true });
+        const user = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+        if (!user || !pass) return alert('Enter both username and password.');
+        performLogin({ login: user, password: pass, 'remember-me': true });
     });
+
     logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('tastytradeRememberToken'); resultsSection.classList.add('hidden'); loginSection.classList.remove('hidden');
-        document.getElementById('username').value = ''; document.getElementById('password').value = '';
+        localStorage.removeItem('tastytradeRememberToken');
+        resultsSection.classList.add('hidden');
+        loginSection.classList.remove('hidden');
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
     });
-    const savedToken = localStorage.getItem('tastytradeRememberToken');
-    if (savedToken) { performLogin({ 'remember-token': savedToken }); }
+
+    // --- AUTO-LOGIN ---
+    const saved = localStorage.getItem('tastytradeRememberToken');
+    if (saved) performLogin({ 'remember-token': saved });
 });
