@@ -75,26 +75,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // Build symbols array (with leading slash)
+                // Build symbols string (comma-separated, with leading slash)
                 const symbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
-                console.debug('Requesting market-metrics POST for:', symbols);
+                const symbolQuery = symbols.join(',');
+                console.debug('Requesting market-metrics GET for:', symbolQuery);
 
-                // 4) Fetch live quotes via POST
-                const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
-                    method: 'POST',
-                    headers: {
-                        Authorization: sessionToken,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ symbols })
-                });
+                // 4) Fetch live quotes via GET with comma-separated symbols
+                const metricsUrl = `${TASTYTRADE_API_URL}/market-metrics?symbols=${encodeURIComponent(symbolQuery)}`;
+                const quoteRes = await fetch(metricsUrl, { headers: { Authorization: sessionToken, 'Accept': 'application/json' } });
                 if (!quoteRes.ok) {
                     const errText = await quoteRes.text();
-                    throw new Error(`Market-metrics POST failed ${quoteRes.status}: ${errText}`);
+                    throw new Error(`Market-metrics GET failed ${quoteRes.status}: ${errText}`);
                 }
                 const quoteData = await quoteRes.json();
-                console.debug('Market-metrics POST response:', quoteData);
+                console.debug('Market-metrics GET response:', quoteData);
 
                 // 5) Compute total notional using contract-value or multiplier
                 const lookup = futures.reduce((m, p) => {
@@ -133,14 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- AUTH HANDLERS ---
     const performLogin = async payload => {
-        loader.classList.remove('hidden');
-        loginSection.classList.add('hidden');
-        resultsSection.classList.add('hidden');
+        loader.classList.remove('hidden'); loginSection.classList.add('hidden'); resultsSection.classList.add('hidden');
         try {
             const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
             const data = await res.json();
@@ -162,8 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('tastytradeRememberToken');
-        resultsSection.classList.add('hidden');
-        loginSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden'); loginSection.classList.remove('hidden');
         document.getElementById('username').value = '';
         document.getElementById('password').value = '';
     });
