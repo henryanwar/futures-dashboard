@@ -75,40 +75,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     netQty += parseInt(p.quantity, 10);
                 });
 
-                // Build symbol map for matching both forms
-                const symbolMap = futures.reduce((map, p) => {
-                    const raw = p.symbol;
-                    const withSlash = raw.startsWith('/') ? raw : `/${raw}`;
-                    const withoutSlash = raw.replace(/\//g, '');
-                    map[withSlash] = p;
-                    map[withoutSlash] = p;
-                    return map;
-                }, {});
-                const symbols = Object.keys(symbolMap);
-                console.debug('Requesting market-metrics for:', symbols);
+                // Build symbol list (ensure leading slash)
+                const symbols = futures.map(p => p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`);
+                console.debug('Requesting market-metrics GET for:', symbols);
 
-                // 4) Fetch live quotes
-                const quoteRes = await fetch(`${TASTYTRADE_API_URL}/market-metrics`, {
-                    method: 'POST',
-                    headers: { Authorization: sessionToken, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbols })
-                });
+                // Build query params
+                const params = new URLSearchParams();
+                symbols.forEach(sym => params.append('symbols', sym));
+                const url = `${TASTYTRADE_API_URL}/market-metrics?${params.toString()}`;
+
+                // 4) Fetch live quotes via GET
+                const quoteRes = await fetch(url, { headers: { Authorization: sessionToken } });
                 if (!quoteRes.ok) {
                     const errText = await quoteRes.text();
-                    throw new Error(`Market-metrics ${quoteRes.status}: ${errText}`);
+                    throw new Error(`Market-metrics GET failed ${quoteRes.status}: ${errText}`);
                 }
                 const quoteData = await quoteRes.json();
-                console.debug('Market-metrics response:', quoteData);
+                console.debug('Market-metrics GET response:', quoteData);
 
                 // 5) Compute total notional
+                // Use a lookup map for contract sizing
+                const lookup = futures.reduce((m, p) => {
+                    const key = p.symbol.startsWith('/') ? p.symbol : `/${p.symbol}`;
+                    m[key] = p;
+                    return m;
+                }, {});
                 quoteData.data.items.forEach(q => {
-                    const key = q.symbol.startsWith('/') ? q.symbol : `/${q.symbol}`;
-                    const pos = symbolMap[q.symbol] || symbolMap[key];
-                    console.debug('Matching quote', q.symbol, '-> position', pos && pos.symbol);
+                    const pos = lookup[q.symbol];
+                    console.debug('Matching GET quote', q.symbol, '->', pos && pos.symbol);
                     if (pos && q['last-trade-price'] != null) {
-                        const contractSize = parseFloat(pos['contract-value'] ?? pos.multiplier ?? 1);
+                        const size = parseFloat(pos['contract-value'] ?? pos.multiplier ?? 1);
                         const qty = parseInt(pos.quantity, 10);
-                        totalNotional += q['last-trade-price'] * contractSize * qty;
+                        totalNotional += q['last-trade-price'] * size * qty;
                     }
                 });
                 notionalValueDisplay.textContent = formatCurrency(totalNotional) + ' (Live)';
@@ -116,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 notionalValueDisplay.textContent = formatCurrency(0);
             }
 
-            // Net position
+            // Net position status
             netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
 
             // Leverage & risk
@@ -143,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
-            const data = await res.json();  // read once
+            const data = await res.json();
             const token = data.data['session-token'];
             if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
             await getDashboardData(token);
@@ -169,6 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Auto-login if token saved
-    const savedToken = localStorage.getItem('tastytradeRememberToken');
-    if (savedToken) performLogin({ 'remember-token': savedToken });
+    const saved = localStorage.getItem('tastytradeRememberToken');
+    if (saved) performLogin({ 'remember-token': saved });
 });
