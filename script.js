@@ -20,11 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- FUNCTIONS ---
     const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
     
-    // NEW: Risk Analysis Function
     const getRiskAssessment = (leverage) => {
         let message = '';
-        let color = '#f0f2f5'; // Default background color
-        let textColor = '#1c1e21'; // Default text color
+        let color = '#f0f2f5';
+        let textColor = '#1c1e21';
 
         if (leverage >= 0.8 && leverage <= 1.2) message = 'Normal Risk (Market Risk)';
         else if (leverage >= 0 && leverage < 0.8) message = 'Low Risk (Below Market Risk)';
@@ -33,16 +32,14 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (leverage > 2 && leverage <= 2.5) message = 'Risk Limits Breached: CHECK IN';
         else if (leverage > 2.5) {
             message = 'EXTREME RISK: CUT ALL POSITIONS. EXTREME RISK.';
-            color = '#dc3545'; // Red background
-            textColor = '#fff'; // White text
+            color = '#dc3545'; textColor = '#fff';
         }
         else if (leverage < 0 && leverage >= -0.5) message = 'Some Risk (Net Short)';
         else if (leverage < -0.5 && leverage >= -1) message = 'Elevated Risk (Net Short)';
         else if (leverage < -1 && leverage >= -1.5) message = 'High Risk: CHECK IN (Net Short)';
         else if (leverage < -1.5) {
             message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)';
-            color = '#dc3545'; // Red background
-            textColor = '#fff'; // White text
+            color = '#dc3545'; textColor = '#fff';
         }
         else message = 'N/A';
         
@@ -57,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loginSection.classList.remove('hidden');
     };
     
-    // Main function to fetch and process data
     const getDashboardData = async (sessionToken) => {
         try {
             const accountsResponse = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { 'Authorization': sessionToken } });
@@ -78,21 +74,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const positionsData = await positionsResponse.json();
             const futuresPositions = positionsData.data.items.filter(p => p['instrument-type'] === 'Future');
 
-            // NEW: Clear previous positions list
             positionsList.innerHTML = '';
             let netQuantity = 0;
-
             let totalNotionalValue = 0;
+
             if (futuresPositions.length > 0) {
-                // NEW: Populate positions list and calculate net quantity
                 futuresPositions.forEach(p => {
                     const li = document.createElement('li');
                     li.innerHTML = `<span>${p.symbol} (${p['underlying-symbol']})</span> <strong>Qty: ${p.quantity}</strong>`;
                     positionsList.appendChild(li);
                     netQuantity += parseInt(p.quantity, 10);
                 });
-
-                const liveSymbols = futuresPositions.map(p => p.symbol.replace(/^\//, ''));
+                
+                // --- THIS IS THE FIX ---
+                // The /market-metrics endpoint requires the original symbol with the leading slash.
+                const liveSymbols = futuresPositions.map(p => p.symbol);
                 let priceSourceMessage = " (Live)";
 
                 try {
@@ -105,8 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     const quotesData = await quotesResponse.json();
                     futuresPositions.forEach(position => {
-                        const cleanSymbol = position.symbol.replace(/^\//, '');
-                        const quote = quotesData.data.items.find(q => q.symbol === cleanSymbol);
+                        const quote = quotesData.data.items.find(q => q.symbol === position.symbol);
                         if (quote && quote['last-trade-price']) {
                             totalNotionalValue += parseFloat(quote['last-trade-price']) * parseInt(position.multiplier, 10) * position.quantity;
                         }
@@ -135,18 +130,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                  notionalValueDisplay.textContent = formatCurrency(0);
-                 netQuantity = 0;
             }
 
-            // NEW: Display Net Position
             if (netQuantity > 0) netPositionDisplay.textContent = 'Net Long';
             else if (netQuantity < 0) netPositionDisplay.textContent = 'Net Short';
             else netPositionDisplay.textContent = 'Flat';
 
             const leverage = netLiqValue > 0 ? totalNotionalValue / netLiqValue : 0;
             leverageDisplay.textContent = `${leverage.toFixed(2)}x`;
-
-            // NEW: Call Risk Analysis Function
             getRiskAssessment(leverage);
 
             loader.classList.add('hidden');
@@ -156,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Login and event listener functions
     const performLogin = async (loginPayload) => {
         loader.classList.remove('hidden');
         loginSection.classList.add('hidden');
