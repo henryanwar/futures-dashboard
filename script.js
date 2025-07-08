@@ -132,6 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.innerHTML = `<span>${f.symbol} (${f['underlying-symbol']})</span> <strong>Qty: ${f.quantity}</strong>`;
                 positionsList.appendChild(li);
 
+                // --- THIS IS THE FINAL, CORRECTED LOGIC ---
+                // It reliably uses the 'underlying-symbol' field provided by the API (e.g., "ZB")
+                // and prepends a slash to match the keys we save (e.g., "/ZB").
                 const root = `/${f['underlying-symbol']}`;
                 const price = prices[root.toUpperCase()];
 
@@ -199,12 +202,11 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsPanel.classList.remove('hidden');
     });
     btnClose.addEventListener('click', () => {
-        // Save all prices from inputs before closing
         const inputs = document.querySelectorAll('.price-input');
         inputs.forEach(input => {
             const symbol = input.dataset.symbol;
             const price = parseFloat(input.value);
-            if(symbol && !isNaN(price) && price > 0) {
+            if(symbol && !isNaN(price)) { // Allow saving of 0
                 saveManualPrice(symbol, price);
             }
         });
