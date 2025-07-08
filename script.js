@@ -131,15 +131,19 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   addPriceBtn.addEventListener("click", () => {
-    const root = newSymbolInput.value.trim().toUpperCase();
-    const price = parseFloat(newPriceInput.value);
-    if (root && /^\/[A-Za-z]+$/.test(root) && price > 0) {
-      saveManualPrice(root, price);
+    let root = newSymbolInput.value.trim().toUpperCase();
+    if (!root) return alert("Enter valid symbol (e.g. ES or /ES)");
+    if (!root.startsWith("/")) root = "/" + root;
+    if (!/^\/[A-Za-z]+$/.test(root)) return alert("Symbol must be letters only, like /ES");
+    const existing = getManualPrices();
+    if (existing[root] !== undefined) {
+      alert(`Symbol ${root} already exists.`);
       newSymbolInput.value = "";
-      newPriceInput.value = "";
-    } else {
-      alert("Enter valid root (e.g. /ZB) and positive price.");
+      return;
     }
+    // Add with default price of zero
+    saveManualPrice(root, 0);
+    newSymbolInput.value = "";
   });
 
   async function loadDashboard(token) {
