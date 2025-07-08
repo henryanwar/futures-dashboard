@@ -61,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
         outRisk.style.color = fg;
     }
 
-    // --- THIS IS THE CORRECTED FUNCTION ---
     function renderPriceList() {
         const m = getManualPrices();
         priceListDiv.innerHTML = '<h3>Saved Prices</h3>';
@@ -73,27 +72,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('div');
             row.className = 'price-entry';
 
-            // Symbol Input (Wider)
             const symInput = document.createElement('input');
             symInput.type = 'text';
             symInput.value = sym;
             symInput.disabled = true;
-            symInput.style.flex = '2'; // Takes up more space
+            symInput.style.flex = '2';
 
-            // Price Input
             const priceInput = document.createElement('input');
             priceInput.type = 'number';
             priceInput.value = pr;
             priceInput.dataset.symbol = sym;
             priceInput.className = 'price-input';
-            priceInput.style.flex = '1'; // Takes up less space
+            priceInput.style.flex = '1';
             
-            // Delete Button (Smaller)
             const delBtn = document.createElement('button');
             delBtn.textContent = 'X';
             delBtn.dataset.symbol = sym;
             delBtn.className = 'delete-btn';
-            delBtn.style.flex = '0 0 40px'; // Makes the button a fixed, smaller width
+            delBtn.style.flex = '0 0 40px';
             delBtn.style.backgroundColor = '#dc3545';
             
             row.append(symInput, priceInput, delBtn);
@@ -103,7 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadDashboard(token) {
         try {
-            loader.classList.remove('hidden'); loginSec.classList.add('hidden');
+            loader.classList.remove('hidden');
+            loginSec.classList.add('hidden');
 
             const accR = await fetch(`${API_URL}/customers/me/accounts`, { headers: { Authorization: token } });
             if (!accR.ok) throw new Error('Accounts fetch failed');
@@ -119,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!posR.ok) throw new Error('Positions fetch failed');
             const futures = (await posR.json()).data.items.filter(i => i['instrument-type'] === 'Future');
 
-            positionsList.innerHTML = ''; let netQty = 0, totalNotional = 0;
+            positionsList.innerHTML = '';
+            let netQty = 0, totalNotional = 0;
             const prices = getManualPrices();
 
             futures.forEach(f => {
@@ -128,10 +126,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.innerHTML = `<span>${f.symbol} (${f['underlying-symbol']})</span> <strong>Qty: ${f.quantity}</strong>`;
                 positionsList.appendChild(li);
 
-                const root = `/${f['underlying-symbol']}`;
+                // --- THIS IS THE FINAL CORRECTION ---
+                // It robustly extracts the root symbol (e.g., /ZB from /ZBU5)
+                const match = f.symbol.match(/^\/[A-Z2]+/);
+                const root = match ? match[0] : f.symbol;
                 const price = prices[root.toUpperCase()];
 
-                if (price != null) {
+                if (price != null && price > 0) {
                     const multiplier = CONTRACT_MULTIPLIERS[root.toUpperCase()] || parseFloat(f.multiplier || 1);
                     totalNotional += price * multiplier * parseInt(f.quantity, 10);
                 }
@@ -146,9 +147,12 @@ document.addEventListener('DOMContentLoaded', () => {
             outLeverage.textContent = `${leverage.toFixed(2)}x`;
             updateRisk(leverage);
 
-            loader.classList.add('hidden'); resultsSec.classList.remove('hidden');
+            loader.classList.add('hidden');
+            resultsSec.classList.remove('hidden');
         } catch (err) {
-            alert(err.message); loader.classList.add('hidden'); loginSec.classList.remove('hidden');
+            alert(err.message);
+            loader.classList.add('hidden');
+            loginSec.classList.remove('hidden');
         }
     }
 
@@ -164,7 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (payload.password) localStorage.setItem(LOGIN_TOKEN_KEY, data.data['remember-token']);
             await loadDashboard(data.data['session-token']);
         } catch (e) {
-            alert(e.message); loader.classList.add('hidden'); loginSec.classList.remove('hidden');
+            alert(e.message);
+            loader.classList.add('hidden');
+            loginSec.classList.remove('hidden');
         }
     }
 
