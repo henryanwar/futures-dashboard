@@ -114,10 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
             row.appendChild(delBtn);
             priceListDiv.appendChild(row);
         });
-    }
-    }
-
-    async function getDashboardData(sessionToken) {
+        }
+async function getDashboardData(sessionToken) {
         try {
             // Accounts
             const accR=await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`,{headers:{Authorization:sessionToken}});
