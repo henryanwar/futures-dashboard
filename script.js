@@ -73,40 +73,46 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.entries(m).forEach(([sym, pr]) => {
             const row = document.createElement('div');
             row.className = 'price-entry';
-            // Use flex layout for inputs and button
             row.style.display = 'flex';
             row.style.alignItems = 'center';
             row.style.marginBottom = '8px';
 
-            // Symbol field (disabled)
+            // Symbol field
             const symInput = document.createElement('input');
             symInput.type = 'text';
             symInput.value = sym;
             symInput.disabled = true;
             symInput.className = 'symbol-field';
-            symInput.style.flexGrow = '2';
+            symInput.style.flex = '1';
+            symInput.style.padding = '6px 8px';
             symInput.style.marginRight = '8px';
+            symInput.style.fontSize = '14px';
 
-            // Price field (editable)
+            // Price field
             const priceInput = document.createElement('input');
             priceInput.type = 'number';
             priceInput.value = pr;
             priceInput.dataset.symbol = sym;
             priceInput.className = 'price-field';
-            priceInput.style.flexGrow = '1';
+            priceInput.style.flex = '1';
+            priceInput.style.padding = '6px 8px';
             priceInput.style.marginRight = '8px';
+            priceInput.style.fontSize = '14px';
 
             // Delete button
             const delBtn = document.createElement('button');
             delBtn.textContent = 'X';
             delBtn.dataset.symbol = sym;
             delBtn.className = 'delete-field';
-            // Optional button styling
             delBtn.style.backgroundColor = '#dc3545';
             delBtn.style.color = '#fff';
             delBtn.style.border = 'none';
-            delBtn.style.padding = '4px 8px';
+            delBtn.style.width = '32px';
+            delBtn.style.height = '32px';
+            delBtn.style.padding = '0';
+            delBtn.style.fontSize = '16px';
             delBtn.style.cursor = 'pointer';
+            delBtn.style.borderRadius = '4px';
 
             // Assemble row
             row.appendChild(symInput);
@@ -114,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
             row.appendChild(delBtn);
             priceListDiv.appendChild(row);
         });
+    }
         }
 async function getDashboardData(sessionToken) {
         try {
