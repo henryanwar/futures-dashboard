@@ -6,24 +6,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const CONTRACT_MULTIPLIERS = {
         '/MNQ': 2,   '/MES': 5,   '/MCL': 1000,
         '/RTY': 50,  '/M2K': 5,   '/ZB': 1000,
-        '/MGC': 10
+        '/MGC': 10,  '/ES': 50, '/NQ': 20
     };
 
     // --- DOM ELEMENTS ---
+    const mainView = document.getElementById('main-view');
     const loginSec = document.getElementById('login-section');
     const resultsSec = document.getElementById('results-section');
     const loader = document.getElementById('loader');
     const btnLogin = document.getElementById('login-btn');
     const btnLogout = document.getElementById('logout-btn');
-
     const btnToggle = document.getElementById('settings-toggle-btn');
     const settingsPanel = document.getElementById('settings-panel');
     const btnClose = document.getElementById('close-settings-btn');
     const btnAddPrice = document.getElementById('add-price-btn');
     const priceListDiv = document.getElementById('price-list');
     const newSymbolInput = document.getElementById('new-symbol');
-    const newPriceInput = document.getElementById('new-price');
 
+    // --- DATA DISPLAY ELEMENTS ---
     const outNlv = document.getElementById('nlv');
     const outNotional = document.getElementById('notional-value');
     const outLeverage = document.getElementById('leverage');
@@ -33,14 +33,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- HELPERS ---
     const formatCurrency = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+    
     const getManualPrices = () => JSON.parse(localStorage.getItem(PRICES_KEY) || '{}');
+    
     const saveManualPrice = (sym, price) => {
-        const m = getManualPrices(); m[sym.toUpperCase()] = price;
-        localStorage.setItem(PRICES_KEY, JSON.stringify(m)); renderPriceList();
+        const m = getManualPrices();
+        m[sym.toUpperCase()] = price;
+        localStorage.setItem(PRICES_KEY, JSON.stringify(m));
     };
+
     const deleteManualPrice = sym => {
-        const m = getManualPrices(); delete m[sym.toUpperCase()];
-        localStorage.setItem(PRICES_KEY, JSON.stringify(m)); renderPriceList();
+        const m = getManualPrices();
+        delete m[sym.toUpperCase()];
+        localStorage.setItem(PRICES_KEY, JSON.stringify(m));
+        renderPriceList();
     };
 
     function updateRisk(leverage) {
@@ -72,15 +78,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('div');
             row.className = 'price-entry';
 
-            const symInput = document.createElement('input');
-            symInput.type = 'text';
-            symInput.value = sym;
-            symInput.disabled = true;
-            symInput.style.flex = '2';
+            const symLabel = document.createElement('label');
+            symLabel.textContent = sym;
+            symLabel.style.flex = '1';
+            symLabel.style.fontWeight = 'bold';
 
             const priceInput = document.createElement('input');
             priceInput.type = 'number';
-            priceInput.value = pr;
+            priceInput.placeholder = 'Enter Price';
+            priceInput.value = pr > 0 ? pr : '';
             priceInput.dataset.symbol = sym;
             priceInput.className = 'price-input';
             priceInput.style.flex = '1';
@@ -92,11 +98,11 @@ document.addEventListener('DOMContentLoaded', () => {
             delBtn.style.flex = '0 0 40px';
             delBtn.style.backgroundColor = '#dc3545';
             
-            row.append(symInput, priceInput, delBtn);
+            row.append(symLabel, priceInput, delBtn);
             priceListDiv.appendChild(row);
         });
     }
-
+    
     async function loadDashboard(token) {
         try {
             loader.classList.remove('hidden');
@@ -126,10 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.innerHTML = `<span>${f.symbol} (${f['underlying-symbol']})</span> <strong>Qty: ${f.quantity}</strong>`;
                 positionsList.appendChild(li);
 
-                // --- THIS IS THE FINAL CORRECTION ---
-                // It robustly extracts the root symbol (e.g., /ZB from /ZBU5)
-                const match = f.symbol.match(/^\/[A-Z2]+/);
-                const root = match ? match[0] : f.symbol;
+                const root = `/${f['underlying-symbol']}`;
                 const price = prices[root.toUpperCase()];
 
                 if (price != null && price > 0) {
@@ -137,10 +140,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     totalNotional += price * multiplier * parseInt(f.quantity, 10);
                 }
             });
-
-            outNotional.textContent = (futures.length && totalNotional === 0) 
-                ? 'Price Not Set' 
-                : formatCurrency(totalNotional) + ' (Manual)';
+            
+            if (futures.length > 0 && totalNotional === 0) {
+                outNotional.textContent = "Price Not Set. Click ⚙️ to set prices.";
+                outNotional.style.color = '#dc3545';
+            } else {
+                outNotional.textContent = formatCurrency(totalNotional) + ' (Manual)';
+                outNotional.style.color = '#1c1e21';
+            }
             
             outNetPos.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
             const leverage = netLiq ? totalNotional / netLiq : 0;
@@ -183,39 +190,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     btnLogout.addEventListener('click', () => {
         localStorage.removeItem(LOGIN_TOKEN_KEY);
-        resultsSec.classList.add('hidden'); loginSec.classList.remove('hidden');
+        resultsSec.classList.add('hidden');
+        loginSec.classList.remove('hidden');
     });
     btnToggle.addEventListener('click', () => {
+        mainView.classList.add('hidden');
         renderPriceList();
         settingsPanel.classList.remove('hidden');
     });
     btnClose.addEventListener('click', () => {
+        // Save all prices from inputs before closing
+        const inputs = document.querySelectorAll('.price-input');
+        inputs.forEach(input => {
+            const symbol = input.dataset.symbol;
+            const price = parseFloat(input.value);
+            if(symbol && !isNaN(price) && price > 0) {
+                saveManualPrice(symbol, price);
+            }
+        });
         settingsPanel.classList.add('hidden');
+        mainView.classList.remove('hidden');
         const token = localStorage.getItem(LOGIN_TOKEN_KEY);
         if (token) doLogin({ 'remember-token': token });
     });
     btnAddPrice.addEventListener('click', () => {
         const sym = newSymbolInput.value.trim().toUpperCase();
-        const pr = parseFloat(newPriceInput.value);
-        if (sym && pr > 0) {
-            saveManualPrice(sym, pr);
+        if (!sym.startsWith('/')) {
+            alert('Symbol must start with a forward slash (e.g., /ES).');
+            return;
+        }
+        if (sym) {
+            saveManualPrice(sym, 0);
             newSymbolInput.value = '';
-            newPriceInput.value = '';
-        } else alert('Please enter valid symbol and price');
+        } else alert('Please enter a valid symbol.');
     });
     priceListDiv.addEventListener('click', (e) => {
         if (e.target.classList.contains('delete-btn')) {
             const symbol = e.target.dataset.symbol;
-            if (confirm(`Are you sure you want to delete the price for ${symbol}?`)) {
+            if (confirm(`Are you sure you want to delete ${symbol}?`)) {
                 deleteManualPrice(symbol);
             }
-        }
-    });
-    priceListDiv.addEventListener('change', (e) => {
-        if (e.target.classList.contains('price-input')) {
-            const symbol = e.target.dataset.symbol;
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v) && v > 0) saveManualPrice(symbol, v);
         }
     });
 
@@ -223,9 +237,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const defaults = { '/MNQ': 0, '/MES': 0, '/MCL': 0, '/RTY': 0, '/M2K': 0, '/ZB': 0, '/MGC': 0 };
     const current = getManualPrices();
     let needsUpdate = false;
-    Object.entries(defaults).forEach(([k, v]) => {
+    Object.keys(defaults).forEach(k => {
         if (current[k] === undefined) {
-            current[k] = v;
+            current[k] = defaults[k];
             needsUpdate = true;
         }
     });
