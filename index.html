@@ -6,14 +6,15 @@
     <title>Tastytrade Futures Leverage Dashboard</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh;}
-        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 100%; max-width: 500px; position: relative; }
         h1 { font-size: 24px; margin-bottom: 20px; text-align: center; }
         h2 { font-size: 16px; margin-bottom: 10px; color: #606770; border-bottom: 1px solid #e9ebee; padding-bottom: 5px;}
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: 600; margin-bottom: 5px; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        input[type="text"], input[type="password"], input[type="number"] { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         button { background-color: #1877f2; color: #fff; border: none; padding: 10px 15px; border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; }
         button:hover { background-color: #166fe5; }
+        .settings-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 24px; cursor: pointer; color: #606770; padding: 5px; }
         #logout-btn { background-color: #e4e6eb; color: #000; margin-top: 20px; }
         #logout-btn:hover { background-color: #d8dbdf; }
         .hidden { display: none; }
@@ -27,43 +28,63 @@
         #positions-list { list-style-type: none; padding: 0; }
         #positions-list li { display: flex; justify-content: space-between; background-color: #f7f7f7; padding: 8px; border-radius: 4px; margin-bottom: 5px; }
         #risk-assessment { text-align: center; padding: 15px; border-radius: 5px; margin-top: 15px; font-weight: bold; font-size: 1.1em; }
+        #settings-panel { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.95); padding: 20px; border-radius: 8px; backdrop-filter: blur(5px); }
+        #settings-panel h2 { text-align: center; }
+        .price-entry { display: flex; gap: 10px; margin-bottom: 10px; }
+        .price-entry input { flex: 1; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Futures Leverage Dashboard</h1>
-        <div id="login-section">
-            <div class="form-group">
-                <label for="username">Tastytrade Username/Email</label>
-                <input type="text" id="username" required>
+        <button id="settings-toggle-btn" class="settings-btn">⚙️</button>
+
+        <div id="main-view">
+            <h1>Futures Leverage Dashboard</h1>
+            <div id="login-section">
+                <div class="form-group">
+                    <label for="username">Tastytrade Username/Email</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button id="login-btn">Login & Fetch Data</button>
             </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" required>
+            <div id="loader" class="loader hidden"></div>
+            <div id="results-section" class="hidden">
+                <div id="positions-section">
+                    <h2>Open Futures Positions</h2>
+                    <div class="result-item"><strong>Net Position:</strong> <span id="net-position"></span></div>
+                    <ul id="positions-list"></ul>
+                </div>
+                <div class="results" style="margin-top: 25px;">
+                    <h2>Account Metrics</h2>
+                    <div class="result-item"><strong>Net Liquidating Value:</strong> <span id="nlv"></span></div>
+                    <div class="result-item"><strong>Total Notional Value:</strong> <span id="notional-value"></span></div>
+                    <div class="result-item"><strong>Inherent Leverage:</strong> <span id="leverage" style="font-size: 1.2em;"></span></div>
+                </div>
+                <div id="risk-section" style="margin-top:15px;">
+                    <h2>Risk Analysis</h2>
+                    <div id="risk-assessment"></div>
+                </div>
+                <button id="logout-btn">Logout & Clear Saved Login</button>
             </div>
-            <button id="login-btn">Login & Fetch Data</button>
         </div>
-        <div id="loader" class="loader hidden"></div>
-        <div id="results-section" class="hidden">
-            <div id="positions-section">
-                <h2>Open Futures Positions</h2>
-                <div class="result-item"><strong>Net Position:</strong> <span id="net-position"></span></div>
-                <ul id="positions-list"></ul>
-            </div>
 
-            <div class="results" style="margin-top: 25px;">
-                <h2>Account Metrics</h2>
-                <div class="result-item"><strong>Net Liquidating Value:</strong> <span id="nlv"></span></div>
-                <div class="result-item"><strong>Total Notional Value:</strong> <span id="notional-value"></span></div>
-                <div class="result-item"><strong>Inherent Leverage:</strong> <span id="leverage" style="font-size: 1.2em;"></span></div>
+        <div id="settings-panel" class="hidden">
+            <h2>Manual Price Settings</h2>
+            <div id="price-list"></div>
+            <div class="form-group">
+                <label for="new-symbol">New Symbol (e.g., /MES)</label>
+                <input type="text" id="new-symbol" placeholder="/MES, /MCL, etc.">
             </div>
-
-            <div id="risk-section">
-                <h2>Risk Analysis</h2>
-                <div id="risk-assessment"></div>
+            <div class="form-group">
+                <label for="new-price">Price</label>
+                <input type="number" id="new-price" placeholder="Enter Price">
             </div>
-
-            <button id="logout-btn">Logout & Clear Saved Login</button>
+            <button id="add-price-btn">Add/Update Price</button>
+            <button id="close-settings-btn" style="background-color: #6c757d; margin-top: 10px;">Close Settings</button>
         </div>
     </div>
     <script src="script.js"></script>
