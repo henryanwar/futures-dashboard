@@ -1,248 +1,54 @@
 // futures-dashboard/script.js
 "use strict";
 
-// Wrap everything in DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
-    // --- CONFIGURATION ---
-    const TASTYTRADE_API_URL = 'https://api.tastytrade.com';
-    const MANUAL_PRICES_KEY = 'tastytradeManualPrices';
+  // --- CONFIG ---
+  const API = 'https://api.tastytrade.com';
+  const PRICES_KEY = 'tastytradeManualPrices';
+  const CONTRACT_SIZES = { '/MNQ':20, '/MES':5, '/MCL':1000, '/RTY':50, '/M2K':10, '/ZB':1000, '/MGC':100 };
 
-    // --- DOM ELEMENTS ---
-    const loginSection = document.getElementById('login-section');
-    const resultsSection = document.getElementById('results-section');
-    const loader = document.getElementById('loader');
-    const loginBtn = document.getElementById('login-btn');
-    const logoutBtn = document.getElementById('logout-btn');
+  // --- ELEMENTS ---
+  const loginSec = document.getElementById('login-section');
+  const resultsSec = document.getElementById('results-section');
+  const loader = document.getElementById('loader');
+  const btnLogin = document.getElementById('login-btn');
+  const btnLogout = document.getElementById('logout-btn');
+  const btnToggle = document.getElementById('settings-toggle-btn');
+  const panel = document.getElementById('settings-panel');
+  const btnClose = document.getElementById('close-settings-btn');
+  const btnAdd = document.getElementById('add-price-btn');
+  const listDiv = document.getElementById('price-list');
+  const inpSymbol = document.getElementById('new-symbol');
+  const inpPrice = document.getElementById('new-price');
+  const outNlv = document.getElementById('nlv');
+  const outNotional = document.getElementById('notional-value');
+  const outLev = document.getElementById('leverage');
+  const outList = document.getElementById('positions-list');
+  const outNet = document.getElementById('net-position');
+  const outRisk = document.getElementById('risk-assessment');
 
-    const settingsPanel = document.getElementById('settings-panel');
-    const settingsToggleBtn = document.getElementById('settings-toggle-btn');
-    const closeSettingsBtn = document.getElementById('close-settings-btn');
-    const addPriceBtn = document.getElementById('add-price-btn');
-    const priceListDiv = document.getElementById('price-list');
-    const newSymbolInput = document.getElementById('new-symbol');
-    const newPriceInput = document.getElementById('new-price');
+  // --- HELPERS ---
+  const fx = v=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);
+  const getPrices=()=>JSON.parse(localStorage.getItem(PRICES_KEY)||'{}');
+  const savePrice=(s,p)=>{const m=getPrices();m[s]=p;localStorage.setItem(PRICES_KEY,JSON.stringify(m));renderList();};
+  const delPrice=s=>{const m=getPrices();delete m[s];localStorage.setItem(PRICES_KEY,JSON.stringify(m));renderList();};
+  function riskMsg(l){let msg='',bg='#f0f2f5',c='#1c1e21';if(l>=.8&&l<=1.2)msg='Normal Risk';else if(l<.8&&l>=0)msg='Low Risk';else if(l>1.2&&l<=1.5)msg='Slightly Elevated';else if(l>1.5&&l<=2)msg='Elevated';else if(l>2&&l<=2.5)msg='Limits Breached';else if(l>2.5){msg='EXTREME RISK';bg='#dc3545';c='#fff';}else if(l<0&&l>=-0.5)msg='Some Risk (Short)';else if(l<-0.5&&l>=-1)msg='Elevated Risk (Short)';else if(l<-1&&l>=-1.5)msg='High Risk (Short)';else if(l<-1.5){msg='EXTREME RISK (Short)';bg='#dc3545';c='#fff';}else msg='N/A';outRisk.textContent=msg;outRisk.style.background=bg;outRisk.style.color=c;}
 
-    const nlvDisplay = document.getElementById('nlv');
-    const notionalValueDisplay = document.getElementById('notional-value');
-    const leverageDisplay = document.getElementById('leverage');
-    const positionsList = document.getElementById('positions-list');
-    const netPositionDisplay = document.getElementById('net-position');
-    const riskAssessmentDisplay = document.getElementById('risk-assessment');
+  function renderList(){const m=getPrices();listDiv.innerHTML='';if(!Object.keys(m).length){listDiv.innerHTML='<p>No prices.</p>';return;}Object.entries(m).forEach(([s,p])=>{const row=document.createElement('div');row.style.display='flex';row.style.marginBottom='6px';const si=document.createElement('input');si.value=s;si.disabled=true;si.style.flex='1';si.style.marginRight='4px';const pi=document.createElement('input');pi.type='number';pi.value=p;pi.style.width='80px';pi.style.marginRight='4px';pi.addEventListener('change',e=>{const v=parseFloat(e.target.value);if(v>0)savePrice(s,v);});const db=document.createElement('button');db.textContent='X';db.style.width='24px';db.style.height='24px';db.style.background='#dc3545';db.style.color='#fff';db.style.border='none';db.style.cursor='pointer';db.addEventListener('click',()=>delPrice(s));row.append(si,pi,db);listDiv.appendChild(row);});}
 
-    // --- HELPERS ---
-    // Contract sizes for different futures (per point)
-    const CONTRACT_SIZES = {
-        '/MNQ': 20,
-        '/MES': 5,
-        '/MCL': 1000,
-        '/RTY': 50,
-        '/M2K': 10,
-        '/ZB': 1000,
-        '/MGC': 100
-    };
-    const formatCurrency = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
-    function updateRiskAssessment(leverage) {
-        let message = '', bg = '#f0f2f5', color = '#1c1e21';
-        if (leverage >= 0.8 && leverage <= 1.2) message = 'Normal Risk (Market Risk)';
-        else if (leverage >= 0 && leverage < 0.8) message = 'Low Risk (Below Market Risk)';
-        else if (leverage > 1.2 && leverage <= 1.5) message = 'Slightly Elevated Risk';
-        else if (leverage > 1.5 && leverage <= 2) message = 'Elevated Risk (Above Market Risk)';
-        else if (leverage > 2 && leverage <= 2.5) message = 'Risk Limits Breached: CHECK IN';
-        else if (leverage > 2.5) { message = 'EXTREME RISK: CUT ALL POSITIONS.'; bg = '#dc3545'; color = '#fff'; }
-        else if (leverage < 0 && leverage >= -0.5) message = 'Some Risk (Net Short)';
-        else if (leverage < -0.5 && leverage >= -1) message = 'Elevated Risk (Net Short)';
-        else if (leverage < -1 && leverage >= -1.5) message = 'High Risk: CHECK IN (Net Short)';
-        else if (leverage < -1.5) { message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)'; bg = '#dc3545'; color = '#fff'; }
-        else message = 'N/A';
-        riskAssessmentDisplay.textContent = message;
-        riskAssessmentDisplay.style.background = bg;
-        riskAssessmentDisplay.style.color = color;
-    }
+  async function loadDashboard(token){try{const ac=await (await fetch(`${API}/customers/me/accounts`,{headers:{Authorization:token}})).json();const num=ac.data.items[0]?.account['account-number'];if(!num)throw new Error('No account');const bal=await (await fetch(`${API}/accounts/${num}/balances`,{headers:{Authorization:token}})).json();const nl=parseFloat(bal.data['net-liquidating-value']);outNlv.textContent=fx(nl);const pos=await (await fetch(`${API}/accounts/${num}/positions`,{headers:{Authorization:token}})).json();const fut=pos.data.items.filter(i=>i['instrument-type']==='Future');let netQ=0,notional=0;outList.innerHTML='';const man=getPrices();fut.forEach(p=>{netQ+=parseInt(p.quantity,10);const li=document.createElement('li');li.textContent=`${p.symbol} Qty:${p.quantity}`;outList.appendChild(li);const pr=man[p.symbol.match(/^\/[^0-9]+/)?.[0]||p.symbol];if(pr!=null){const root=p.symbol.match(/^\/[^0-9]+/)?.[0]||p.symbol;const sz=CONTRACT_SIZES[root]||parseFloat(p['contract-value']||p.multiplier||1);notional+=pr*sz*parseInt(p.quantity,10);} });outNotional.textContent=fut.length&&notional===0?'Price Not Set':fx(notional)+' (Manual)';outNet.textContent=netQ>0?'Net Long':netQ<0?'Net Short':'Flat';const lev=nl?notional/nl:0;outLev.textContent=`${lev.toFixed(2)}x`;riskMsg(lev);loader.classList.add('hidden');resultsSec.classList.remove('hidden');}catch(e){alert(e.message);loader.classList.add('hidden');loginSec.classList.remove('hidden');}}
 
-    function getManualPrices() {
-        return JSON.parse(localStorage.getItem(MANUAL_PRICES_KEY) || '{}');
-    }
-    function saveManualPrice(symbol, price) {
-        const m = getManualPrices();
-        m[symbol.toUpperCase()] = price;
-        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(m));
-        renderPriceList();
-    }
-    function deleteManualPrice(symbol) {
-        const m = getManualPrices();
-        delete m[symbol.toUpperCase()];
-        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(m));
-        renderPriceList();
-    }
+  async function doLogin(payload){loader.classList.remove('hidden');loginSec.classList.add('hidden');resultsSec.classList.add('hidden');try{const res=await fetch(`${API}/sessions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!res.ok)throw new Error(res.status===401?'Bad cred':'Login failed');const d=await res.json();if(payload.password)localStorage.setItem('tastytradeRememberToken',d.data['remember-token']);await loadDashboard(d.data['session-token']);}catch(e){alert(e.message);loader.classList.add('hidden');loginSec.classList.remove('hidden');}}
 
-    function renderPriceList() {
-        const m = getManualPrices();
-        priceListDiv.innerHTML = '';
-        if (Object.keys(m).length === 0) {
-            priceListDiv.innerHTML = '<p>No manual prices saved.</p>';
-            return;
-        }
-        Object.entries(m).forEach(([sym, pr]) => {
-            const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.marginBottom = '8px';
+  btnLogin.addEventListener('click',()=>{const u=document.getElementById('username').value;const p=document.getElementById('password').value;if(!u||!p)return alert('Enter both');doLogin({login:u,password:p,'remember-me':true});});
+  btnLogout.addEventListener('click',()=>{localStorage.removeItem('tastytradeRememberToken');loginSec.classList.remove('hidden');resultsSec.classList.add('hidden');});
+  btnToggle.addEventListener('click',()=>{renderList();panel.classList.remove('hidden');});
+  btnClose.addEventListener('click',()=>{panel.classList.add('hidden');const tk=localStorage.getItem('tastytradeRememberToken');if(tk)doLogin({'remember-token':tk});});
+  btnAdd.addEventListener('click',()=>{const s=inpSymbol.value.trim().toUpperCase();const v=parseFloat(inpPrice.value);if(s&&v>0){savePrice(s,v);inpSymbol.value='';inpPrice.value='';}else alert('Symbol & price');});
 
-            const symInput = document.createElement('input');
-            symInput.type = 'text';
-            symInput.value = sym;
-            symInput.disabled = true;
-            symInput.style.flex = '1';
-            symInput.style.marginRight = '8px';
-            symInput.style.padding = '6px 8px';
+  // init
+  const tok=localStorage.getItem('tastytradeRememberToken');if(tok)doLogin({'remember-token':tok});else loginSec.classList.remove('hidden');
 
-            const priceInput = document.createElement('input');
-            priceInput.type = 'number';
-            priceInput.value = pr;
-            priceInput.dataset.symbol = sym;
-            priceInput.style.flex = '1';
-            priceInput.style.marginRight = '8px';
-            priceInput.style.padding = '6px 8px';
-            priceInput.addEventListener('change', e => {
-                const newVal = parseFloat(e.target.value);
-                if (!isNaN(newVal) && newVal > 0) saveManualPrice(sym, newVal);
-            });
-
-            const delBtn = document.createElement('button');
-            delBtn.textContent = 'X';
-            delBtn.dataset.symbol = sym;
-            delBtn.style.width = '32px';
-            delBtn.style.height = '32px';
-            delBtn.style.padding = '0';
-            delBtn.style.margin = '0';
-            delBtn.style.border = 'none';
-            delBtn.style.backgroundColor = '#dc3545';
-            delBtn.style.color = '#fff';
-            delBtn.style.cursor = 'pointer';
-            delBtn.style.borderRadius = '4px';
-            delBtn.addEventListener('click', () => deleteManualPrice(sym));
-
-            row.appendChild(symInput);
-            row.appendChild(priceInput);
-            row.appendChild(delBtn);
-            priceListDiv.appendChild(row);
-        });
-    }
-
-    async function getDashboardData(sessionToken) {
-        try {
-            const accR = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { Authorization: sessionToken } });
-            if (!accR.ok) throw new Error('Accounts fetch failed');
-            const accNum = (await accR.json()).data.items[0]?.account['account-number'];
-            if (!accNum) throw new Error('No account found');
-
-            const balR = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/balances`, { headers: { Authorization: sessionToken } });
-            if (!balR.ok) throw new Error('Balance fetch failed');
-            const netLiq = parseFloat((await balR.json()).data['net-liquidating-value']);
-            nlvDisplay.textContent = formatCurrency(netLiq);
-
-            const posR = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/positions`, { headers: { Authorization: sessionToken } });
-            if (!posR.ok) throw new Error('Positions fetch failed');
-            const futures = (await posR.json()).data.items.filter(i => i['instrument-type'] === 'Future');
-
-            positionsList.innerHTML = '';
-            let netQty = 0, totalNotional = 0;
-            const manual = getManualPrices();
-            futures.forEach(p => {
-                const li = document.createElement('li');
-                li.textContent = `${p.symbol} Qty: ${p.quantity}`;
-                positionsList.appendChild(li);
-                netQty += parseInt(p.quantity, 10);
-
-                const manualPrice = manual[p.symbol.toUpperCase()];
-                if (manualPrice != null) {
-                    // extract root symbol (e.g. /MES from /MESU3)
-                    const root = (p.symbol.match(/^\/[^0-9]+/) || [p.symbol])[0];
-                    // lookup contract size or fallback
-                    const size = CONTRACT_SIZES[root] || parseFloat(p['contract-value'] || p.multiplier || 1);
-                    const qty = parseInt(p.quantity, 10);
-                    totalNotional += manualPrice * size * qty;
-                }
-            });
-                    totalNotional += price * size * parseInt(p.quantity, 10);
-                }
-            });
-
-            notionalValueDisplay.textContent = futures.length && totalNotional === 0
-                ? 'Price Not Set (Manual)'
-                : formatCurrency(totalNotional) + ' (Manual)';
-
-            netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
-            const lev = netLiq ? totalNotional / netLiq : 0;
-            leverageDisplay.textContent = `${lev.toFixed(2)}x`;
-            updateRiskAssessment(lev);
-
-            loader.classList.add('hidden');
-            resultsSection.classList.remove('hidden');
-        } catch (e) {
-            alert(e.message);
-            loader.classList.add('hidden');
-            loginSection.classList.remove('hidden');
-        }
-    }
-
-    async function performLogin(payload) {
-        loader.classList.remove('hidden');
-        loginSection.classList.add('hidden');
-        resultsSection.classList.add('hidden');
-        try {
-            const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-            });
-            if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
-            const data = await res.json();
-            const token = data.data['session-token'];
-            if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
-            await getDashboardData(token);
-        } catch (e) {
-            alert(e.message);
-            loader.classList.add('hidden');
-            loginSection.classList.remove('hidden');
-        }
-    }
-
-    // EVENT LISTENERS
-    loginBtn.addEventListener('click', () => {
-        const user = document.getElementById('username').value;
-        const pass = document.getElementById('password').value;
-        if (!user || !pass) return alert('Enter both username and password');
-        performLogin({ login: user, password: pass, 'remember-me': true });
-    });
-
-    logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('tastytradeRememberToken');
-        resultsSection.classList.add('hidden');
-        loginSection.classList.remove('hidden');
-    });
-
-    settingsToggleBtn.addEventListener('click', () => {
-        renderPriceList();
-        settingsPanel.classList.remove('hidden');
-    });
-    closeSettingsBtn.addEventListener('click', () => {
-        settingsPanel.classList.add('hidden');
-        const saved = localStorage.getItem('tastytradeRememberToken');
-        if (saved) performLogin({ 'remember-token': saved });
-    });
-    addPriceBtn.addEventListener('click', () => {
-        const s = newSymbolInput.value.trim().toUpperCase();
-        const v = parseFloat(newPriceInput.value);
-        if (s && v > 0) { saveManualPrice(s, v); newSymbolInput.value = ''; newPriceInput.value = ''; }
-        else alert('Valid symbol & price required');
-    });
-
-    // BOOTSTRAP
-    const saved = localStorage.getItem('tastytradeRememberToken');
-    if (saved) performLogin({ 'remember-token': saved });
-
-    // PRELOAD DEFAULTS
-    const defaults = { '/MNQ': 0, '/MES': 0, '/MCL': 0, '/RTY': 0, '/M2K': 0, '/ZB': 0, '/MGC': 0 };
-    const cur = getManualPrices();
-    Object.entries(defaults).forEach(([s, v]) => { if (!cur.hasOwnProperty(s)) cur[s] = v; });
-    localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(cur));
+  // defaults
+  const defs={'/MNQ':0,'/MES':0,'/MCL':0,'/RTY':0,'/M2K':0,'/ZB':0,'/MGC':0};const cur=getPrices();Object.entries(defs).forEach(([k,v])=>{if(!cur[k])cur[k]=v;});localStorage.setItem(PRICES_KEY,JSON.stringify(cur));
 });
