@@ -1,3 +1,6 @@
+// futures-dashboard/script.js
+
+"use strict";
 document.addEventListener('DOMContentLoaded', () => {
     // --- CONFIGURATION ---
     const TASTYTRADE_API_URL = 'https://api.tastytrade.com';
@@ -9,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loader = document.getElementById('loader');
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
+
     const settingsPanel = document.getElementById('settings-panel');
     const settingsToggleBtn = document.getElementById('settings-toggle-btn');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
@@ -17,7 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const newSymbolInput = document.getElementById('new-symbol');
     const newPriceInput = document.getElementById('new-price');
 
-    // --- DATA DISPLAY ELEMENTS ---
     const nlvDisplay = document.getElementById('nlv');
     const notionalValueDisplay = document.getElementById('notional-value');
     const leverageDisplay = document.getElementById('leverage');
@@ -26,214 +29,184 @@ document.addEventListener('DOMContentLoaded', () => {
     const riskAssessmentDisplay = document.getElementById('risk-assessment');
 
     // --- HELPERS ---
-    const formatCurrency = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-    const getRiskAssessment = leverage => {
-        let message = '', bg = '#f0f2f5', color = '#1c1e21';
-        if (leverage >= 0.8 && leverage <= 1.2) message = 'Normal Risk (Market Risk)';
-        else if (leverage >= 0 && leverage < 0.8) message = 'Low Risk (Below Market Risk)';
-        else if (leverage > 1.2 && leverage <= 1.5) message = 'Slightly Elevated Risk';
-        else if (leverage > 1.5 && leverage <= 2) message = 'Elevated Risk (Above Market Risk)';
-        else if (leverage > 2 && leverage <= 2.5) message = 'Risk Limits Breached: CHECK IN';
-        else if (leverage > 2.5) { message = 'EXTREME RISK: CUT ALL POSITIONS.'; bg = '#dc3545'; color = '#fff'; }
-        else if (leverage < 0 && leverage >= -0.5) message = 'Some Risk (Net Short)';
-        else if (leverage < -0.5 && leverage >= -1) message = 'Elevated Risk (Net Short)';
-        else if (leverage < -1 && leverage >= -1.5) message = 'High Risk: CHECK IN (Net Short)';
-        else if (leverage < -1.5) { message = 'EXTREME RISK: CUT ALL POSITIONS. (Net Short)'; bg = '#dc3545'; color = '#fff'; }
-        else message = 'N/A';
-        riskAssessmentDisplay.textContent = message;
+    const formatCurrency = v => new Intl.NumberFormat('en-US', {style:'currency',currency:'USD'}).format(v);
+    function getRiskAssessment(leverage) {
+        let msg='', bg='#f0f2f5', color='#1c1e21';
+        if (leverage>=0.8 && leverage<=1.2) msg='Normal Risk (Market Risk)';
+        else if (leverage>=0 && leverage<0.8) msg='Low Risk (Below Market Risk)';
+        else if (leverage>1.2 && leverage<=1.5) msg='Slightly Elevated Risk';
+        else if (leverage>1.5 && leverage<=2) msg='Elevated Risk (Above Market Risk)';
+        else if (leverage>2 && leverage<=2.5) msg='Risk Limits Breached: CHECK IN';
+        else if (leverage>2.5) { msg='EXTREME RISK: CUT ALL POSITIONS.'; bg='#dc3545'; color='#fff'; }
+        else if (leverage<0 && leverage>=-0.5) msg='Some Risk (Net Short)';
+        else if (leverage< -0.5 && leverage>= -1) msg='Elevated Risk (Net Short)';
+        else if (leverage< -1 && leverage>= -1.5) msg='High Risk: CHECK IN (Net Short)';
+        else if (leverage< -1.5) { msg='EXTREME RISK: CUT ALL POSITIONS. (Net Short)'; bg='#dc3545'; color='#fff'; }
+        else msg='N/A';
+        riskAssessmentDisplay.textContent = msg;
         riskAssessmentDisplay.style.background = bg;
         riskAssessmentDisplay.style.color = color;
-    };
+    }
 
-    const handleError = msg => {
-        console.error(msg);
-        alert(`Error: ${msg}`);
-        loader.classList.add('hidden');
-        loginSection.classList.remove('hidden');
-    };
-
-    // --- MANUAL PRICE LOGIC ---
-    const getManualPrices = () => JSON.parse(localStorage.getItem(MANUAL_PRICES_KEY)) || {};
-    
-    const saveManualPrice = (symbol, price) => {
-        const prices = getManualPrices();
-        prices[symbol.toUpperCase()] = price;
-        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(prices));
+    function getManualPrices() {
+        return JSON.parse(localStorage.getItem(MANUAL_PRICES_KEY)||'{}');
+    }
+    function saveManualPrice(symbol, price) {
+        const m=getManualPrices();
+        m[symbol.toUpperCase()] = price;
+        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(m));
         renderPriceList();
-    };
-    
-    const deleteManualPrice = (symbol) => {
-        const prices = getManualPrices();
-        delete prices[symbol.toUpperCase()];
-        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(prices));
+    }
+    function deleteManualPrice(symbol) {
+        const m=getManualPrices();
+        delete m[symbol.toUpperCase()];
+        localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(m));
         renderPriceList();
-    };
-
-    const renderPriceList = () => {
-        const prices = getManualPrices();
-        priceListDiv.innerHTML = '<h3>Saved Prices</h3>';
-        if (Object.keys(prices).length === 0) {
-            priceListDiv.innerHTML += '<p>No prices saved yet.</p>';
+    }
+    function renderPriceList() {
+        const m=getManualPrices();
+        priceListDiv.innerHTML = '';
+        if(Object.keys(m).length===0) {
+            priceListDiv.innerHTML = '<p>No manual prices saved.</p>';
             return;
         }
-        for (const [symbol, price] of Object.entries(prices)) {
-            const entry = document.createElement('div');
-            entry.className = 'price-entry';
-            entry.innerHTML = `
-                <input type="text" value="${symbol}" disabled style="flex-grow: 2;">
-                <input type="number" value="${price}" class="price-input" data-symbol="${symbol}" style="flex-grow: 1;">
-                <button data-symbol="${symbol}" class="delete-btn" style="background-color: #6c757d;">X</button>
+        Object.entries(m).forEach(([sym,pr])=>{
+            const row=document.createElement('div');
+            row.className='price-entry';
+            row.innerHTML=`
+                <input disabled value="${sym}" class="symbol-field">
+                <input type="number" value="${pr}" data-symbol="${sym}" class="price-field">
+                <button data-symbol="${sym}" class="delete-field">X</button>
             `;
-            priceListDiv.appendChild(entry);
-        }
-    };
-    
-    // --- FETCH DASHBOARD DATA ---
-    const getDashboardData = async sessionToken => {
+            priceListDiv.appendChild(row);
+        });
+    }
+
+    async function getDashboardData(sessionToken) {
         try {
-            const accRes = await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`, { headers: { Authorization: sessionToken } });
-            if (!accRes.ok) throw new Error('Accounts fetch failed');
-            const accNum = (await accRes.json()).data.items[0]?.account['account-number'];
-            if (!accNum) throw new Error('No account found');
+            // Accounts
+            const accR=await fetch(`${TASTYTRADE_API_URL}/customers/me/accounts`,{headers:{Authorization:sessionToken}});
+            if(!accR.ok) throw new Error('Accounts fetch failed');
+            const accNum=(await accR.json()).data.items[0]?.account['account-number'];
+            if(!accNum) throw new Error('No account found');
 
-            const balRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/balances`, { headers: { Authorization: sessionToken } });
-            if (!balRes.ok) throw new Error('Balance fetch failed');
-            const netLiq = parseFloat((await balRes.json()).data['net-liquidating-value']);
-            nlvDisplay.textContent = formatCurrency(netLiq);
+            // Balances
+            const balR=await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/balances`,{headers:{Authorization:sessionToken}});
+            if(!balR.ok) throw new Error('Balance fetch failed');
+            const netLiq=parseFloat((await balR.json()).data['net-liquidating-value']);
+            nlvDisplay.textContent=formatCurrency(netLiq);
 
-            const posRes = await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/positions`, { headers: { Authorization: sessionToken } });
-            if (!posRes.ok) throw new Error('Positions fetch failed');
-            const futures = (await posRes.json()).data.items.filter(p => p['instrument-type'] === 'Future');
+            // Positions
+            const posR=await fetch(`${TASTYTRADE_API_URL}/accounts/${accNum}/positions`,{headers:{Authorization:sessionToken}});
+            if(!posR.ok) throw new Error('Positions fetch failed');
+            const futures=(await posR.json()).data.items.filter(p=>p['instrument-type']==='Future');
 
-            positionsList.innerHTML = '';
-            let netQty = 0, totalNotional = 0;
-            const priceSourceMessage = " (Manual)";
+            positionsList.innerHTML='';
+            let netQty=0, totalNotional=0;
+            const manualPrices=getManualPrices();
 
-            if (futures.length) {
-                const manualPrices = getManualPrices();
-                futures.forEach(p => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `<span>${p.symbol} (${p['underlying-symbol']})</span> <strong>Qty: ${p.quantity}</strong>`;
-                    positionsList.appendChild(li);
-                    netQty += parseInt(p.quantity, 10);
-                    
-                    const price = manualPrices[p.symbol.toUpperCase()];
-                    if (price) {
-                        totalNotional += parseFloat(price) * parseInt(p.multiplier, 10) * p.quantity;
-                    }
-                });
-            }
-            
-            if (totalNotional === 0 && futures.length > 0) {
-                notionalValueDisplay.textContent = "Price Not Set";
-            } else {
-                notionalValueDisplay.textContent = formatCurrency(totalNotional) + priceSourceMessage;
-            }
+            futures.forEach(p=>{
+                const li=document.createElement('li');
+                li.innerHTML=`${p.symbol} (${p['underlying-symbol']}) Qty: ${p.quantity}`;
+                positionsList.appendChild(li);
+                netQty+=parseInt(p.quantity,10);
 
-            netPositionDisplay.textContent = netQty > 0 ? 'Net Long' : netQty < 0 ? 'Net Short' : 'Flat';
-            const leverage = netLiq ? totalNotional / netLiq : 0;
-            leverageDisplay.textContent = `${leverage.toFixed(2)}x`;
-            getRiskAssessment(leverage);
+                const price=manualPrices[p.symbol.toUpperCase()];
+                if(price!=null) {
+                    const size=parseFloat(p['contract-value']||p.multiplier||1);
+                    totalNotional+=price*size*parseInt(p.quantity,10);
+                }
+            });
+
+            notionalValueDisplay.textContent = futures.length&&totalNotional===0?
+                'Price Not Set (Manual)':
+                formatCurrency(totalNotional)+' (Manual)';
+
+            netPositionDisplay.textContent = netQty>0?'Net Long':netQty<0?'Net Short':'Flat';
+            const lev=netLiq?totalNotional/netLiq:0;
+            leverageDisplay.textContent=`${lev.toFixed(2)}x`;
+            getRiskAssessment(lev);
 
             loader.classList.add('hidden');
             resultsSection.classList.remove('hidden');
-        } catch (err) {
-            handleError(err.message);
+        } catch(e) {
+            alert(e.message);
+            loader.classList.add('hidden');
+            loginSection.classList.remove('hidden');
         }
-    };
+    }
 
-    // --- AUTH & EVENT LISTENERS ---
-    const performLogin = async payload => {
+    async function performLogin(payload) {
         loader.classList.remove('hidden');
         loginSection.classList.add('hidden');
         resultsSection.classList.add('hidden');
         try {
-            const res = await fetch(`${TASTYTRADE_API_URL}/sessions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+            const res=await fetch(`${TASTYTRADE_API_URL}/sessions`,{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error(res.status === 401 ? 'Invalid credentials' : 'Login failed');
-            const data = await res.json();
-            const token = data.data['session-token'];
-            if (payload.password) localStorage.setItem('tastytradeRememberToken', data.data['remember-token']);
+            if(!res.ok) throw new Error(res.status===401?'Invalid credentials':'Login failed');
+            const data=await res.json();
+            const token=data.data['session-token'];
+            if(payload.password) localStorage.setItem('tastytradeRememberToken',data.data['remember-token']);
             await getDashboardData(token);
-        } catch (e) {
-            handleError(e.message);
+        } catch(e) {
+            alert(e.message);
+            loader.classList.add('hidden');
+            loginSection.classList.remove('hidden');
         }
-    };
+    }
 
-    loginBtn.addEventListener('click', () => {
-        const user = document.getElementById('username').value;
-        const pass = document.getElementById('password').value;
-        if (!user || !pass) return alert('Enter both username and password.');
-        performLogin({ login: user, password: pass, 'remember-me': true });
+    // Event Listeners
+    loginBtn.addEventListener('click',()=>{
+        const u=document.getElementById('username').value;
+        const p=document.getElementById('password').value;
+        if(!u||!p) return alert('Enter both username and password');
+        performLogin({login:u,password:p,'remember-me':true});
     });
-
-    logoutBtn.addEventListener('click', () => {
+    logoutBtn.addEventListener('click',()=>{
         localStorage.removeItem('tastytradeRememberToken');
         resultsSection.classList.add('hidden');
         loginSection.classList.remove('hidden');
-        document.getElementById('username').value = '';
-        document.getElementById('password').value = '';
     });
-    
-    settingsToggleBtn.addEventListener('click', () => {
+
+    settingsToggleBtn.addEventListener('click',()=>{
         renderPriceList();
         settingsPanel.classList.remove('hidden');
     });
-    
-    closeSettingsBtn.addEventListener('click', () => {
+    closeSettingsBtn.addEventListener('click',()=>{
         settingsPanel.classList.add('hidden');
-        const saved = localStorage.getItem('tastytradeRememberToken');
-        if (saved) performLogin({ 'remember-token': saved });
+        const saved=localStorage.getItem('tastytradeRememberToken');
+        if(saved) performLogin({'remember-token':saved});
     });
-    
-    addPriceBtn.addEventListener('click', () => {
-        const symbol = newSymbolInput.value.trim().toUpperCase();
-        const price = parseFloat(newPriceInput.value);
-        if (symbol && price > 0) {
-            saveManualPrice(symbol, price);
-            newSymbolInput.value = '';
-            newPriceInput.value = '';
-        } else {
-            alert('Please enter a valid symbol and price.');
+
+    addPriceBtn.addEventListener('click',()=>{
+        const s=newSymbolInput.value.trim().toUpperCase();
+        const v=parseFloat(newPriceInput.value);
+        if(s&&v>0) { saveManualPrice(s,v); newSymbolInput.value=''; newPriceInput.value=''; }
+        else alert('Valid symbol & price required');
+    });
+    priceListDiv.addEventListener('click',e=>{
+        if(e.target.classList.contains('delete-field')) {
+            deleteManualPrice(e.target.dataset.symbol);
         }
     });
-    
-    priceListDiv.addEventListener('click', (e) => {
-        if (e.target.classList.contains('delete-btn')) {
-            const symbol = e.target.dataset.symbol;
-            if (confirm(`Are you sure you want to delete the price for ${symbol}?`)) {
-                deleteManualPrice(symbol);
-            }
-        }
-        // Add event listener for updating prices on change
-        if (e.target.classList.contains('price-input')) {
-            e.target.addEventListener('change', (event) => {
-                const symbol = event.target.dataset.symbol;
-                const newPrice = parseFloat(event.target.value);
-                if (symbol && newPrice > 0) {
-                    saveManualPrice(symbol, newPrice);
-                }
-            }, { once: true });
+    priceListDiv.addEventListener('change',e=>{
+        if(e.target.classList.contains('price-field')) {
+            const sym=e.target.dataset.symbol;
+            const v=parseFloat(e.target.value);
+            if(sym&&v>0) saveManualPrice(sym,v);
         }
     });
 
-    // Auto-login if token saved
-    const saved = localStorage.getItem('tastytradeRememberToken');
-    if (saved) performLogin({ 'remember-token': saved });
-    
-    // Pre-populate settings with requested symbols
-    const initialPrices = {
-        "/MNQ": 0, "/MES": 0, "/MCL": 0, "/RTY": 0,
-        "/M2K": 0, "/ZB": 0, "/MGC": 0
-    };
-    const currentPrices = getManualPrices();
-    for (const [symbol, price] of Object.entries(initialPrices)) {
-        if (!currentPrices.hasOwnProperty(symbol)) {
-            currentPrices[symbol] = price;
-        }
-    }
-    localStorage.setItem(MANUAL_PRICES_KEY, JSON.stringify(currentPrices));
+    // Bootstrap
+    const saved=localStorage.getItem('tastytradeRememberToken');
+    if(saved) performLogin({'remember-token':saved});
+
+    // Preload common symbols
+    const defaults={"/MNQ":0,"/MES":0,"/MCL":0,"/RTY":0,"/M2K":0,"/ZB":0,"/MGC":0};
+    const cur=getManualPrices();
+    Object.entries(defaults).forEach(([s,v])=>{ if(!cur.hasOwnProperty(s)) cur[s]=v; });
+    localStorage.setItem(MANUAL_PRICES_KEY,JSON.stringify(cur));
 });
