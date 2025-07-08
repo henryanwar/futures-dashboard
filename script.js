@@ -3,8 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_URL = 'https://api.tastytrade.com';
     const PRICES_KEY = 'tastytradeManualPrices';
     const LOGIN_TOKEN_KEY = 'tastytradeRememberToken';
-    
-    // Using contract multipliers directly is more reliable
     const CONTRACT_MULTIPLIERS = {
         '/MNQ': 2,   '/MES': 5,   '/MCL': 1000,
         '/RTY': 50,  '/M2K': 5,   '/ZB': 1000,
@@ -63,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         outRisk.style.color = fg;
     }
 
+    // --- THIS IS THE CORRECTED FUNCTION ---
     function renderPriceList() {
         const m = getManualPrices();
         priceListDiv.innerHTML = '<h3>Saved Prices</h3>';
@@ -74,19 +73,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('div');
             row.className = 'price-entry';
 
-            row.innerHTML = `
-                <input type="text" value="${sym}" disabled style="flex-grow: 2;">
-                <input type="number" value="${pr}" data-symbol="${sym}" class="price-input" style="flex-grow: 1;">
-                <button data-symbol="${sym}" class="delete-btn" style="background-color: #dc3545;">X</button>
-            `;
+            // Symbol Input (Wider)
+            const symInput = document.createElement('input');
+            symInput.type = 'text';
+            symInput.value = sym;
+            symInput.disabled = true;
+            symInput.style.flex = '2'; // Takes up more space
+
+            // Price Input
+            const priceInput = document.createElement('input');
+            priceInput.type = 'number';
+            priceInput.value = pr;
+            priceInput.dataset.symbol = sym;
+            priceInput.className = 'price-input';
+            priceInput.style.flex = '1'; // Takes up less space
+            
+            // Delete Button (Smaller)
+            const delBtn = document.createElement('button');
+            delBtn.textContent = 'X';
+            delBtn.dataset.symbol = sym;
+            delBtn.className = 'delete-btn';
+            delBtn.style.flex = '0 0 40px'; // Makes the button a fixed, smaller width
+            delBtn.style.backgroundColor = '#dc3545';
+            
+            row.append(symInput, priceInput, delBtn);
             priceListDiv.appendChild(row);
         });
     }
 
     async function loadDashboard(token) {
         try {
-            loader.classList.remove('hidden');
-            loginSec.classList.add('hidden');
+            loader.classList.remove('hidden'); loginSec.classList.add('hidden');
 
             const accR = await fetch(`${API_URL}/customers/me/accounts`, { headers: { Authorization: token } });
             if (!accR.ok) throw new Error('Accounts fetch failed');
@@ -102,8 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!posR.ok) throw new Error('Positions fetch failed');
             const futures = (await posR.json()).data.items.filter(i => i['instrument-type'] === 'Future');
 
-            positionsList.innerHTML = '';
-            let netQty = 0, totalNotional = 0;
+            positionsList.innerHTML = ''; let netQty = 0, totalNotional = 0;
             const prices = getManualPrices();
 
             futures.forEach(f => {
@@ -112,13 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.innerHTML = `<span>${f.symbol} (${f['underlying-symbol']})</span> <strong>Qty: ${f.quantity}</strong>`;
                 positionsList.appendChild(li);
 
-                // --- THIS IS THE FIX ---
-                // Get the root symbol (e.g., /RTY) from the position's underlying-symbol field
-                const root = f['underlying-symbol'];
-                const price = prices[root];
+                const root = `/${f['underlying-symbol']}`;
+                const price = prices[root.toUpperCase()];
 
                 if (price != null) {
-                    const multiplier = CONTRACT_MULTIPLIERS[root] || parseFloat(f.multiplier || 1);
+                    const multiplier = CONTRACT_MULTIPLIERS[root.toUpperCase()] || parseFloat(f.multiplier || 1);
                     totalNotional += price * multiplier * parseInt(f.quantity, 10);
                 }
             });
@@ -132,12 +146,9 @@ document.addEventListener('DOMContentLoaded', () => {
             outLeverage.textContent = `${leverage.toFixed(2)}x`;
             updateRisk(leverage);
 
-            loader.classList.add('hidden');
-            resultsSec.classList.remove('hidden');
+            loader.classList.add('hidden'); resultsSec.classList.remove('hidden');
         } catch (err) {
-            alert(err.message);
-            loader.classList.add('hidden');
-            loginSec.classList.remove('hidden');
+            alert(err.message); loader.classList.add('hidden'); loginSec.classList.remove('hidden');
         }
     }
 
@@ -187,19 +198,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } else alert('Please enter valid symbol and price');
     });
     priceListDiv.addEventListener('click', (e) => {
-        const target = e.target;
-        const symbol = target.dataset.symbol;
-        if (target.classList.contains('delete-btn') && symbol) {
+        if (e.target.classList.contains('delete-btn')) {
+            const symbol = e.target.dataset.symbol;
             if (confirm(`Are you sure you want to delete the price for ${symbol}?`)) {
                 deleteManualPrice(symbol);
             }
         }
     });
     priceListDiv.addEventListener('change', (e) => {
-        const target = e.target;
-        const symbol = target.dataset.symbol;
-        if (target.classList.contains('price-input') && symbol) {
-            const v = parseFloat(target.value);
+        if (e.target.classList.contains('price-input')) {
+            const symbol = e.target.dataset.symbol;
+            const v = parseFloat(e.target.value);
             if (!isNaN(v) && v > 0) saveManualPrice(symbol, v);
         }
     });
@@ -207,8 +216,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INITIALIZATION ---
     const defaults = { '/MNQ': 0, '/MES': 0, '/MCL': 0, '/RTY': 0, '/M2K': 0, '/ZB': 0, '/MGC': 0 };
     const current = getManualPrices();
-    Object.entries(defaults).forEach(([k, v]) => { if (current[k] === undefined) current[k] = v; });
-    localStorage.setItem(PRICES_KEY, JSON.stringify(current));
+    let needsUpdate = false;
+    Object.entries(defaults).forEach(([k, v]) => {
+        if (current[k] === undefined) {
+            current[k] = v;
+            needsUpdate = true;
+        }
+    });
+    if (needsUpdate) localStorage.setItem(PRICES_KEY, JSON.stringify(current));
 
     const savedToken = localStorage.getItem(LOGIN_TOKEN_KEY);
     if (savedToken) {
