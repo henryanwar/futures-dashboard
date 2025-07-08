@@ -80,8 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const entry = document.createElement('div');
             entry.className = 'price-entry';
             entry.innerHTML = `
-                <input type="text" value="${symbol}" disabled>
-                <input type="number" value="${price}" disabled>
+                <input type="text" value="${symbol}" disabled style="flex-grow: 2;">
+                <input type="number" value="${price}" class="price-input" data-symbol="${symbol}" style="flex-grow: 1;">
                 <button data-symbol="${symbol}" class="delete-btn" style="background-color: #6c757d;">X</button>
             `;
             priceListDiv.appendChild(entry);
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             positionsList.innerHTML = '';
             let netQty = 0, totalNotional = 0;
-            let priceSourceMessage = " (Manual)";
+            const priceSourceMessage = " (Manual)";
 
             if (futures.length) {
                 const manualPrices = getManualPrices();
@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (totalNotional === 0 && futures.length > 0) {
-                notionalValueDisplay.textContent = "Price Not Found in Settings";
+                notionalValueDisplay.textContent = "Price Not Set";
             } else {
                 notionalValueDisplay.textContent = formatCurrency(totalNotional) + priceSourceMessage;
             }
@@ -185,7 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     closeSettingsBtn.addEventListener('click', () => {
         settingsPanel.classList.add('hidden');
-        // Re-fetch data to reflect any price changes
         const saved = localStorage.getItem('tastytradeRememberToken');
         if (saved) performLogin({ 'remember-token': saved });
     });
@@ -193,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addPriceBtn.addEventListener('click', () => {
         const symbol = newSymbolInput.value.trim().toUpperCase();
         const price = parseFloat(newPriceInput.value);
-        if (symbol && price) {
+        if (symbol && price > 0) {
             saveManualPrice(symbol, price);
             newSymbolInput.value = '';
             newPriceInput.value = '';
@@ -208,6 +207,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirm(`Are you sure you want to delete the price for ${symbol}?`)) {
                 deleteManualPrice(symbol);
             }
+        }
+        // Add event listener for updating prices on change
+        if (e.target.classList.contains('price-input')) {
+            e.target.addEventListener('change', (event) => {
+                const symbol = event.target.dataset.symbol;
+                const newPrice = parseFloat(event.target.value);
+                if (symbol && newPrice > 0) {
+                    saveManualPrice(symbol, newPrice);
+                }
+            }, { once: true });
         }
     });
 
