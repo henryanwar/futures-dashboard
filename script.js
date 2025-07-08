@@ -30,6 +30,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const riskAssessmentDisplay = document.getElementById('risk-assessment');
 
     // --- HELPERS ---
+    // Contract sizes for different futures (per point)
+    const CONTRACT_SIZES = {
+        '/MNQ': 20,
+        '/MES': 5,
+        '/MCL': 1000,
+        '/RTY': 50,
+        '/M2K': 10,
+        '/ZB': 1000,
+        '/MGC': 100
+    };
     const formatCurrency = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
     function updateRiskAssessment(leverage) {
         let message = '', bg = '#f0f2f5', color = '#1c1e21';
@@ -143,9 +153,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.textContent = `${p.symbol} Qty: ${p.quantity}`;
                 positionsList.appendChild(li);
                 netQty += parseInt(p.quantity, 10);
-                const price = manual[p.symbol.toUpperCase()];
-                if (price != null) {
-                    const size = parseFloat(p['contract-value'] || p.multiplier || 1);
+
+                const manualPrice = manual[p.symbol.toUpperCase()];
+                if (manualPrice != null) {
+                    // extract root symbol (e.g. /MES from /MESU3)
+                    const root = (p.symbol.match(/^\/[^0-9]+/) || [p.symbol])[0];
+                    // lookup contract size or fallback
+                    const size = CONTRACT_SIZES[root] || parseFloat(p['contract-value'] || p.multiplier || 1);
+                    const qty = parseInt(p.quantity, 10);
+                    totalNotional += manualPrice * size * qty;
+                }
+            });
                     totalNotional += price * size * parseInt(p.quantity, 10);
                 }
             });
