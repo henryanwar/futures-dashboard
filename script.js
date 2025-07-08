@@ -64,22 +64,57 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPriceList();
     }
     function renderPriceList() {
-        const m=getManualPrices();
+        const m = getManualPrices();
         priceListDiv.innerHTML = '';
-        if(Object.keys(m).length===0) {
+        if (Object.keys(m).length === 0) {
             priceListDiv.innerHTML = '<p>No manual prices saved.</p>';
             return;
         }
-        Object.entries(m).forEach(([sym,pr])=>{
-            const row=document.createElement('div');
-            row.className='price-entry';
-            row.innerHTML=`
-                <input disabled value="${sym}" class="symbol-field">
-                <input type="number" value="${pr}" data-symbol="${sym}" class="price-field">
-                <button data-symbol="${sym}" class="delete-field">X</button>
-            `;
+        Object.entries(m).forEach(([sym, pr]) => {
+            const row = document.createElement('div');
+            row.className = 'price-entry';
+            // Use flex layout for inputs and button
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.marginBottom = '8px';
+
+            // Symbol field (disabled)
+            const symInput = document.createElement('input');
+            symInput.type = 'text';
+            symInput.value = sym;
+            symInput.disabled = true;
+            symInput.className = 'symbol-field';
+            symInput.style.flexGrow = '2';
+            symInput.style.marginRight = '8px';
+
+            // Price field (editable)
+            const priceInput = document.createElement('input');
+            priceInput.type = 'number';
+            priceInput.value = pr;
+            priceInput.dataset.symbol = sym;
+            priceInput.className = 'price-field';
+            priceInput.style.flexGrow = '1';
+            priceInput.style.marginRight = '8px';
+
+            // Delete button
+            const delBtn = document.createElement('button');
+            delBtn.textContent = 'X';
+            delBtn.dataset.symbol = sym;
+            delBtn.className = 'delete-field';
+            // Optional button styling
+            delBtn.style.backgroundColor = '#dc3545';
+            delBtn.style.color = '#fff';
+            delBtn.style.border = 'none';
+            delBtn.style.padding = '4px 8px';
+            delBtn.style.cursor = 'pointer';
+
+            // Assemble row
+            row.appendChild(symInput);
+            row.appendChild(priceInput);
+            row.appendChild(delBtn);
             priceListDiv.appendChild(row);
         });
+    }
     }
 
     async function getDashboardData(sessionToken) {
