@@ -132,8 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
         li.textContent = `${f.symbol} Qty:${f.quantity}`;
         positionsList.appendChild(li);
 
-        // Determine root via underlying-symbol
-        const root = '/' + f['underlying-symbol'];
+                // Determine root via symbol prefix (e.g. /MES from /MESU3)
+        const match = f.symbol.match(/^\/[A-Za-z]+/);
+        const root = match ? match[0] : f.symbol;
         const price = prices[root];
         if (price != null) {
           const size = CONTRACT_SIZES[root] || parseFloat(f['contract-value'] || f.multiplier || 1);
